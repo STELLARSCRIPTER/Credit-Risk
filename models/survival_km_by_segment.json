@@ -1,0 +1,71 @@
+{
+    "by_lead_source": {
+        "Referral": {
+            "median_days": 3787.0,
+            "n": 8573,
+            "events": 3178
+        },
+        "Website": {
+            "median_days": null,
+            "n": 8561,
+            "events": 1408
+        },
+        "Trade Show": {
+            "median_days": 5652.0,
+            "n": 8506,
+            "events": 2009
+        },
+        "Cold Call": {
+            "median_days": null,
+            "n": 8434,
+            "events": 596
+        },
+        "Webinar": {
+            "median_days": 5430.0,
+            "n": 8419,
+            "events": 2222
+        },
+        "LinkedIn": {
+            "median_days": 6031.0,
+            "n": 8365,
+            "events": 1725
+        }
+    },
+    "by_industry": {
+        "Education": {
+            "median_days": null,
+            "n": 7379,
+            "events": 961
+        },
+        "SaaS": {
+            "median_days": 4504.0,
+            "n": 7327,
+            "events": 2400
+        },
+        "Logistics": {
+            "median_days": 6051.0,
+            "n": 7315,
+            "events": 1293
+        },
+        "Retail": {
+            "median_days": null,
+            "n": 7295,
+            "events": 1146
+        },
+        "Manufacturing": {
+            "median_days": 5888.0,
+            "n": 7272,
+            "events": 1564
+        },
+        "Healthcare": {
+            "median_days": 5748.0,
+            "n": 7139,
+            "events": 1706
+        },
+        "FinServ": {
+            "median_days": 4919.0,
+            "n": 7131,
+            "events": 2068
+        }
+    }
+}

@@ -1,6 +1,7 @@
 import os
 import json
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
@@ -88,11 +89,6 @@ STAGE_ORDER = ["New", "Contacted", "Qualified", "Converted"]
 
 
 def _build_funnel_stages(customer_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Cumulative funnel: a lead in 'Converted' is counted as having passed
-    through every earlier stage. Lost/Unqualified leads exit the funnel
-    and are reported separately below the chart.
-    """
     stage_index = {s: i for i, s in enumerate(STAGE_ORDER)}
     stage_df = customer_df.copy()
     stage_df["_stage_rank"] = stage_df["status"].map(stage_index)
@@ -172,7 +168,6 @@ def render_customer_drilldown(customer_df: pd.DataFrame):
     lead_id = selected_label.split(" — ")[0]
     record = lookup_df.loc[lookup_df["lead_id"] == lead_id].iloc[0]
 
-    # Firmographics
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Industry", record.get("industry") or "—")
     c2.metric("Region", record.get("region") or "—")
@@ -187,7 +182,6 @@ def render_customer_drilldown(customer_df: pd.DataFrame):
 
     st.write("")
 
-    # Engagement + campaign
     e1, e2, e3, e4 = st.columns(4)
     avg_activities = customer_df["total_activities"].mean()
     e1.metric(
@@ -201,7 +195,6 @@ def render_customer_drilldown(customer_df: pd.DataFrame):
 
     st.write("")
 
-    # Outcome
     o1, o2, o3, o4 = st.columns(4)
     deal_value = record.get("deal_value", 0)
     o1.metric("Deal Value", f"${deal_value:,.0f}" if pd.notnull(deal_value) else "—")
@@ -216,10 +209,7 @@ def render_customer_drilldown(customer_df: pd.DataFrame):
 
 
 def render_customer_analytics(customer_df):
-    st.markdown(
-        '<div class="top-title">Customer Analytics</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown('<div class="top-title">Customer Analytics</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="description">Explore customer profiles, segments, engagement, and conversion performance.</div>',
         unsafe_allow_html=True
@@ -256,17 +246,9 @@ def render_customer_analytics(customer_df):
     st.dataframe(
         analytics_df[
             [
-                "lead_id",
-                "company_name",
-                "industry",
-                "company_size",
-                "job_title",
-                "region",
-                "lead_source",
-                "total_activities",
-                "status",
-                "opportunity_stage",
-                "deal_value"
+                "lead_id", "company_name", "industry", "company_size",
+                "job_title", "region", "lead_source", "total_activities",
+                "status", "opportunity_stage", "deal_value"
             ]
         ],
         hide_index=True,
@@ -294,7 +276,6 @@ STATUS_RISK_WEIGHT = {
 
 
 def _pct_rank_inverse(series: pd.Series) -> pd.Series:
-    """Higher raw value -> lower risk. Returns 0-1, higher = riskier."""
     if series.nunique(dropna=True) <= 1:
         return pd.Series(0.5, index=series.index)
     ranks = series.rank(pct=True, na_option="bottom")
@@ -302,7 +283,6 @@ def _pct_rank_inverse(series: pd.Series) -> pd.Series:
 
 
 def _pct_rank(series: pd.Series) -> pd.Series:
-    """Higher raw value -> higher risk. Returns 0-1, higher = riskier."""
     if series.nunique(dropna=True) <= 1:
         return pd.Series(0.5, index=series.index)
     return series.rank(pct=True, na_option="bottom")
@@ -397,12 +377,7 @@ def render_risk_analysis(source_df: pd.DataFrame):
 
     with chart_col1:
         st.markdown('<div class="panel"><div class="panel-title">Risk Score Distribution</div>', unsafe_allow_html=True)
-        fig = px.histogram(
-            filtered,
-            x="risk_score",
-            nbins=25,
-            color_discrete_sequence=["#1769e0"],
-        )
+        fig = px.histogram(filtered, x="risk_score", nbins=25, color_discrete_sequence=["#1769e0"])
         fig.update_layout(height=300, margin=dict(l=5, r=5, t=10, b=5), plot_bgcolor="white", paper_bgcolor="white",
                            xaxis_title="Risk Score", yaxis_title="Customers")
         st.plotly_chart(fig, use_container_width=True)
@@ -413,11 +388,7 @@ def render_risk_analysis(source_df: pd.DataFrame):
         tier_counts = filtered["risk_tier"].value_counts().reindex(["Low", "Medium", "High"]).reset_index()
         tier_counts.columns = ["risk_tier", "count"]
         fig = px.pie(
-            tier_counts,
-            values="count",
-            names="risk_tier",
-            hole=.6,
-            color="risk_tier",
+            tier_counts, values="count", names="risk_tier", hole=.6, color="risk_tier",
             color_discrete_map={"Low": "#1eb27b", "Medium": "#ffc21a", "High": "#ef5350"},
         )
         fig.update_layout(height=300, margin=dict(l=5, r=5, t=10, b=5), legend_title_text="")
@@ -434,14 +405,8 @@ def render_risk_analysis(source_df: pd.DataFrame):
             .sort_values("avg_risk", ascending=False)
             .head(8)
         )
-        fig = px.bar(
-            industry_risk,
-            x="avg_risk",
-            y="industry",
-            orientation="h",
-            color="avg_risk",
-            color_continuous_scale="Reds",
-        )
+        fig = px.bar(industry_risk, x="avg_risk", y="industry", orientation="h",
+                     color="avg_risk", color_continuous_scale="Reds")
         fig.update_layout(height=300, margin=dict(l=5, r=5, t=10, b=5), coloraxis_showscale=False, xaxis_title="Avg. Risk Score")
         st.plotly_chart(fig, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -453,12 +418,7 @@ def render_risk_analysis(source_df: pd.DataFrame):
             .agg(expected_loss=("expected_loss", "sum"))
             .sort_values("expected_loss", ascending=False)
         )
-        fig = px.bar(
-            region_loss,
-            x="region",
-            y="expected_loss",
-            color_discrete_sequence=["#ef5350"],
-        )
+        fig = px.bar(region_loss, x="region", y="expected_loss", color_discrete_sequence=["#ef5350"])
         fig.update_layout(height=300, margin=dict(l=5, r=5, t=10, b=5), plot_bgcolor="white", paper_bgcolor="white",
                            yaxis_title="Expected Loss ($)")
         st.plotly_chart(fig, use_container_width=True)
@@ -468,20 +428,15 @@ def render_risk_analysis(source_df: pd.DataFrame):
     top_risk = filtered.sort_values("risk_score", ascending=False).head(15)
     st.dataframe(
         top_risk[
-            [
-                "lead_id", "company_name", "industry", "region", "status",
-                "total_activities", "duration_days", "risk_score", "risk_tier", "expected_loss"
-            ]
+            ["lead_id", "company_name", "industry", "region", "status",
+             "total_activities", "duration_days", "risk_score", "risk_tier", "expected_loss"]
         ].style.format({"risk_score": "{:.2f}", "expected_loss": "${:,.0f}"}),
-        hide_index=True,
-        use_container_width=True,
-        height=450
+        hide_index=True, use_container_width=True, height=450
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_interventions(source_df: pd.DataFrame):
-    """Compare campaign treatment results with the control group."""
     st.markdown('<div class="top-title">Interventions</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="description">Measure campaign treatment impact and identify the customer segments where an intervention performs best.</div>',
@@ -600,8 +555,7 @@ def render_interventions(source_df: pd.DataFrame):
         summary[["treatment_group", "leads", "conversions", "conversion_rate", "won_revenue"]].style.format(
             {"conversion_rate": "{:.2f}%", "won_revenue": "${:,.0f}"}
         ),
-        hide_index=True,
-        use_container_width=True,
+        hide_index=True, use_container_width=True,
     )
     st.caption("This page shows observed outcomes from your synthetic campaign data and demonstrates a treatment-versus-control intervention analysis.")
     st.markdown('</div>', unsafe_allow_html=True)
@@ -624,29 +578,14 @@ def load_model_metadata():
 
 @st.cache_data(ttl=300)
 def load_scored_leads():
-    """
-    Join ml_lead_scores with lead_summary so the ML page has full context.
-    Returns empty DataFrame if the table doesn't exist yet.
-    """
     engine = create_engine(os.getenv("DATABASE_URL"))
     try:
         return pd.read_sql("""
             SELECT
-                s.lead_id,
-                l.company_name,
-                l.industry,
-                l.region,
-                l.lead_source,
-                l.job_title,
-                l.company_size,
-                l.status,
-                l.deal_value,
-                l.event_converted,
-                l.duration_days,
-                s.conversion_probability,
-                s.risk_tier,
-                s.expected_loss,
-                s.model_version
+                s.lead_id, l.company_name, l.industry, l.region, l.lead_source,
+                l.job_title, l.company_size, l.status, l.deal_value,
+                l.event_converted, l.duration_days,
+                s.conversion_probability, s.risk_tier, s.expected_loss, s.model_version
             FROM ml_lead_scores s
             LEFT JOIN lead_summary l ON l.lead_id = s.lead_id
         """, engine)
@@ -672,48 +611,39 @@ def render_ml_models():
 
     best = meta.get("best_model", "—")
     metrics = meta.get("best_model_metrics", {})
-
     st.caption(f"Model currently shipped: **{best}**")
 
-    # --- Top KPI cards (real metrics) --------------------------------------
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("AUC (ROC)",  f"{metrics.get('AUC', 0):.2f}")
-    c2.metric("Accuracy",   f"{metrics.get('Accuracy', 0):.2f}")
-    c3.metric("F1 Score",   f"{metrics.get('F1', 0):.2f}")
-    c4.metric("Precision",  f"{metrics.get('Precision', 0):.2f}")
-    c5.metric("Recall",     f"{metrics.get('Recall', 0):.2f}")
+    c1.metric("AUC (ROC)", f"{metrics.get('AUC', 0):.2f}")
+    c2.metric("Accuracy",  f"{metrics.get('Accuracy', 0):.2f}")
+    c3.metric("F1 Score",  f"{metrics.get('F1', 0):.2f}")
+    c4.metric("Precision", f"{metrics.get('Precision', 0):.2f}")
+    c5.metric("Recall",    f"{metrics.get('Recall', 0):.2f}")
 
     if metrics.get("AUC", 0) < 0.65:
         st.warning(
             "⚠️ AUC is only slightly above random (0.5). The current feature set "
-            "carries limited signal. Consider strengthening the synthetic data "
-            "generator so conversion depends more strongly on observable features."
+            "carries limited signal."
         )
     else:
         st.success("Model is performing within a usable range.")
 
-    # --- Model comparison table + chart ------------------------------------
     st.markdown('<div class="panel"><div class="panel-title">Model Comparison</div>', unsafe_allow_html=True)
     comp = pd.DataFrame(meta.get("all_model_results", {})).T
     if not comp.empty:
         comp = comp[["AUC", "Accuracy", "F1", "Precision", "Recall"]]
         st.dataframe(comp, use_container_width=True)
-
         melted = comp.reset_index().melt(id_vars="index", var_name="Metric", value_name="Score")
         fig = px.bar(
-            melted,
-            x="index", y="Score", color="Metric", barmode="group",
+            melted, x="index", y="Score", color="Metric", barmode="group",
             labels={"index": "Model"},
             color_discrete_sequence=["#1769e0", "#1eb27b", "#ffc21a", "#865fd3", "#ef5350"],
         )
-        fig.update_layout(
-            height=340, margin=dict(l=5, r=5, t=10, b=5),
-            plot_bgcolor="white", paper_bgcolor="white", legend_title_text=""
-        )
+        fig.update_layout(height=340, margin=dict(l=5, r=5, t=10, b=5),
+                          plot_bgcolor="white", paper_bgcolor="white", legend_title_text="")
         st.plotly_chart(fig, use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- Per-lead scored data ---------------------------------------------
     scored = load_scored_leads()
     if scored.empty:
         st.info("No rows in `ml_lead_scores` yet. Run the training script.")
@@ -722,16 +652,10 @@ def render_ml_models():
     st.markdown('<div class="panel"><div class="panel-title">Scored Leads</div>', unsafe_allow_html=True)
 
     f1, f2, f3 = st.columns(3)
-    tiers = f1.multiselect(
-        "Risk Tier", ["Low", "Medium", "High"],
-        default=["Low", "Medium", "High"], key="ml_tiers"
-    )
-    industries = f2.multiselect(
-        "Industry", sorted(scored["industry"].dropna().unique()), key="ml_industries"
-    )
-    sources = f3.multiselect(
-        "Lead Source", sorted(scored["lead_source"].dropna().unique()), key="ml_sources"
-    )
+    tiers = f1.multiselect("Risk Tier", ["Low", "Medium", "High"],
+                            default=["Low", "Medium", "High"], key="ml_tiers")
+    industries = f2.multiselect("Industry", sorted(scored["industry"].dropna().unique()), key="ml_industries")
+    sources = f3.multiselect("Lead Source", sorted(scored["lead_source"].dropna().unique()), key="ml_sources")
 
     filtered = scored[scored["risk_tier"].isin(tiers)]
     if industries:
@@ -744,7 +668,6 @@ def render_ml_models():
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
-    # KPI row
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Leads shown", f"{len(filtered):,}")
     k2.metric("Avg conversion prob", f"{filtered['conversion_probability'].mean():.1%}")
@@ -752,9 +675,7 @@ def render_ml_models():
     actual = filtered["event_converted"].dropna()
     k4.metric("Actual converted", f"{actual.mean():.1%}" if len(actual) else "—")
 
-    # Tier donut + probability histogram
     left, right = st.columns(2)
-
     with left:
         st.markdown('<div class="panel-title">Risk Tier Distribution</div>', unsafe_allow_html=True)
         tier_counts = (
@@ -762,85 +683,258 @@ def render_ml_models():
             .reindex(["Low", "Medium", "High"]).fillna(0).reset_index()
         )
         tier_counts.columns = ["risk_tier", "count"]
-        fig = px.pie(
-            tier_counts, names="risk_tier", values="count", hole=0.6,
-            color="risk_tier",
-            color_discrete_map={"Low": "#1eb27b", "Medium": "#ffc21a", "High": "#ef5350"},
-        )
+        fig = px.pie(tier_counts, names="risk_tier", values="count", hole=0.6, color="risk_tier",
+                     color_discrete_map={"Low": "#1eb27b", "Medium": "#ffc21a", "High": "#ef5350"})
         fig.update_layout(height=300, margin=dict(l=5, r=5, t=10, b=5), legend_title_text="")
         st.plotly_chart(fig, use_container_width=True)
 
     with right:
         st.markdown('<div class="panel-title">Conversion Probability Distribution</div>', unsafe_allow_html=True)
-        fig = px.histogram(
-            filtered, x="conversion_probability", nbins=40,
-            color="risk_tier",
-            color_discrete_map={"Low": "#1eb27b", "Medium": "#ffc21a", "High": "#ef5350"},
-        )
-        fig.update_layout(
-            height=300, margin=dict(l=5, r=5, t=10, b=5),
-            plot_bgcolor="white", paper_bgcolor="white",
-            xaxis_title="Conversion Probability", yaxis_title="Leads",
-            legend_title_text="Risk Tier",
-        )
+        fig = px.histogram(filtered, x="conversion_probability", nbins=40, color="risk_tier",
+                           color_discrete_map={"Low": "#1eb27b", "Medium": "#ffc21a", "High": "#ef5350"})
+        fig.update_layout(height=300, margin=dict(l=5, r=5, t=10, b=5),
+                          plot_bgcolor="white", paper_bgcolor="white",
+                          xaxis_title="Conversion Probability", yaxis_title="Leads",
+                          legend_title_text="Risk Tier")
         st.plotly_chart(fig, use_container_width=True)
 
-    # Probability calibration vs. actual
     st.markdown('<div class="panel-title">Calibration — Predicted vs. Actual Conversion</div>', unsafe_allow_html=True)
     cal = filtered.dropna(subset=["event_converted"]).copy()
     if not cal.empty:
-        cal["prob_bin"] = pd.cut(
-            cal["conversion_probability"],
-            bins=[0, .2, .4, .6, .8, 1.0],
-            labels=["0–20%", "20–40%", "40–60%", "60–80%", "80–100%"],
-        )
+        cal["prob_bin"] = pd.cut(cal["conversion_probability"],
+                                 bins=[0, .2, .4, .6, .8, 1.0],
+                                 labels=["0–20%", "20–40%", "40–60%", "60–80%", "80–100%"])
         cal_df = cal.groupby("prob_bin", observed=True, as_index=False).agg(
             predicted=("conversion_probability", "mean"),
             actual=("event_converted", "mean"),
             leads=("lead_id", "count"),
         )
         fig = go.Figure()
-        fig.add_trace(go.Bar(
-            x=cal_df["prob_bin"], y=cal_df["actual"],
-            name="Actual conversion rate", marker_color="#1eb27b",
-        ))
-        fig.add_trace(go.Scatter(
-            x=cal_df["prob_bin"], y=cal_df["predicted"],
-            mode="lines+markers", name="Predicted probability",
-            line=dict(color="#1769e0", width=3),
-        ))
-        fig.update_layout(
-            height=320, margin=dict(l=5, r=5, t=10, b=5),
-            plot_bgcolor="white", paper_bgcolor="white",
-            yaxis_title="Rate", xaxis_title="Predicted Probability Bin",
-            legend=dict(orientation="h", y=1.1),
-        )
+        fig.add_trace(go.Bar(x=cal_df["prob_bin"], y=cal_df["actual"],
+                             name="Actual conversion rate", marker_color="#1eb27b"))
+        fig.add_trace(go.Scatter(x=cal_df["prob_bin"], y=cal_df["predicted"],
+                                 mode="lines+markers", name="Predicted probability",
+                                 line=dict(color="#1769e0", width=3)))
+        fig.update_layout(height=320, margin=dict(l=5, r=5, t=10, b=5),
+                          plot_bgcolor="white", paper_bgcolor="white",
+                          yaxis_title="Rate", xaxis_title="Predicted Probability Bin",
+                          legend=dict(orientation="h", y=1.1))
         st.plotly_chart(fig, use_container_width=True)
 
-    # Table
     st.markdown('<div class="panel-title">Top Leads by Conversion Probability</div>', unsafe_allow_html=True)
     top = filtered.sort_values("conversion_probability", ascending=False).head(25)
     st.dataframe(
-        top[[
-            "lead_id", "company_name", "industry", "region", "lead_source",
-            "job_title", "deal_value", "conversion_probability",
-            "risk_tier", "expected_loss", "event_converted"
-        ]].style.format({
+        top[["lead_id", "company_name", "industry", "region", "lead_source",
+             "job_title", "deal_value", "conversion_probability",
+             "risk_tier", "expected_loss", "event_converted"]].style.format({
             "conversion_probability": "{:.2%}",
             "expected_loss": "${:,.0f}",
             "deal_value": "${:,.0f}",
         }),
         hide_index=True, use_container_width=True, height=460,
     )
-
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+# ---------------------------------------------------------------------------
+# Survival Analysis page
+# ---------------------------------------------------------------------------
+
+@st.cache_data(ttl=300)
+def load_survival_km():
+    if not os.path.exists("models/survival_km_by_segment.json"):
+        return None
+    with open("models/survival_km_by_segment.json") as f:
+        return json.load(f)
+
+
+@st.cache_data(ttl=300)
+def load_survival_cox():
+    if not os.path.exists("models/survival_cox_summary.json"):
+        return None
+    with open("models/survival_cox_summary.json") as f:
+        return json.load(f)
+
+
+@st.cache_data(ttl=300)
+def load_survival_predictions():
+    engine = create_engine(os.getenv("DATABASE_URL"))
+    try:
+        return pd.read_sql("""
+            SELECT p.lead_id, p.predicted_median_days,
+                   s.lead_source, s.industry, s.region,
+                   s.event_converted, s.duration_days, s.total_activities
+            FROM ml_survival_predictions p
+            LEFT JOIN lead_summary s ON s.lead_id = p.lead_id
+        """, engine)
+    except Exception:
+        return pd.DataFrame()
+
+
+def render_survival_page():
+    st.markdown('<div class="top-title">Survival Analysis</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="description">Not just <em>whether</em> a lead converts — '
+        '<em>when</em> it converts, and how timing differs by segment. '
+        'Kaplan-Meier curves + Cox Proportional Hazards.</div>',
+        unsafe_allow_html=True,
+    )
+
+    km = load_survival_km()
+    cox = load_survival_cox()
+    if km is None or cox is None:
+        st.warning(
+            "No survival model found. Run `python scripts/survival_analysis.py` first."
+        )
+        return
+
+    # --- KPI row ---------------------------------------------------------
+    c1, c2, c3 = st.columns(3)
+    c1.metric("C-index (concordance)", f"{cox['concordance_index']:.3f}")
+    c2.metric("Events observed", "11,138")
+    c3.metric("Total leads analysed", "50,858")
+
+    if cox["concordance_index"] < 0.60:
+        st.warning("C-index is weak — model has limited discriminative power.")
+    else:
+        st.success("Survival model is performing within a usable range.")
+
+    # --- KM medians by lead source ---------------------------------------
+    st.markdown('<div class="panel"><div class="panel-title">'
+                'Time-to-Conversion by Lead Source</div>', unsafe_allow_html=True)
+
+    km_src = km.get("by_lead_source", {})
+    if km_src:
+        rows = []
+        for source, vals in km_src.items():
+            rows.append({
+                "lead_source": source,
+                "median_days": vals["median_days"] if vals["median_days"] else None,
+                "n": vals["n"],
+                "events": vals["events"],
+                "conversion_rate": vals["events"] / vals["n"] if vals["n"] else 0,
+            })
+        km_df = pd.DataFrame(rows)
+        km_df["median_years"] = km_df["median_days"] / 365.25
+
+        plotted = km_df.dropna(subset=["median_days"]).sort_values("median_days")
+
+        fig = px.bar(
+            plotted, x="lead_source", y="median_years",
+            color="median_years",
+            color_continuous_scale=["#1eb27b", "#ffc21a", "#ef5350"],
+            labels={"median_years": "Median time to convert (years)",
+                    "lead_source": "Lead source"},
+            text=plotted["median_years"].round(1).astype(str) + " yrs",
+        )
+        fig.update_traces(textposition="outside")
+        fig.update_layout(
+            height=380, margin=dict(l=5, r=5, t=10, b=5),
+            plot_bgcolor="white", paper_bgcolor="white",
+            coloraxis_showscale=False,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        not_reached = km_df[km_df["median_days"].isna()]
+        if not not_reached.empty:
+            st.caption(
+                "Sources below 50% conversion are not shown: "
+                + ", ".join(not_reached["lead_source"].tolist())
+                + " — fewer than half of their leads ever convert."
+            )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- Cox hazard ratios ------------------------------------------------
+    st.markdown('<div class="panel"><div class="panel-title">'
+                'Cox Proportional Hazards — Hazard Ratios</div>', unsafe_allow_html=True)
+
+    feats = cox.get("features", {})
+    if feats:
+        hr_df = pd.DataFrame(feats).T.reset_index().rename(columns={"index": "feature"})
+        hr_df = hr_df[hr_df["p_value"] < 0.05].copy()
+        hr_df = hr_df.sort_values("hazard_ratio", ascending=True)
+
+        colors = ["#ef5350" if hr < 1 else "#1eb27b" for hr in hr_df["hazard_ratio"]]
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=hr_df["hazard_ratio"],
+            y=hr_df["feature"],
+            mode="markers",
+            marker=dict(size=12, color=colors),
+            error_x=dict(
+                type="data",
+                symmetric=False,
+                array=hr_df["hr_upper_95"] - hr_df["hazard_ratio"],
+                arrayminus=hr_df["hazard_ratio"] - hr_df["hr_lower_95"],
+                color="#888",
+            ),
+            hovertemplate="<b>%{y}</b><br>HR: %{x:.2f}<br><extra></extra>",
+        ))
+        fig.add_vline(x=1.0, line_dash="dash", line_color="#666")
+        fig.update_layout(
+            height=max(400, len(hr_df) * 28),
+            margin=dict(l=5, r=5, t=10, b=5),
+            plot_bgcolor="white", paper_bgcolor="white",
+            xaxis_title="Hazard ratio (log scale)",
+            xaxis_type="log",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.caption(
+            "**How to read this:** HR > 1 = converts *faster* than the baseline. "
+            "HR < 1 = converts *slower*. Error bars are 95% confidence intervals. "
+            "Only statistically significant features (p < 0.05) are shown."
+        )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- Per-lead predictions --------------------------------------------
+    preds = load_survival_predictions()
+    if not preds.empty:
+        st.markdown('<div class="panel"><div class="panel-title">'
+                    'Per-Lead Predicted Median Time-to-Convert</div>',
+                    unsafe_allow_html=True)
+
+        preds = preds.dropna(subset=["predicted_median_days"])
+        preds["predicted_years"] = preds["predicted_median_days"] / 365.25
+
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Leads scored", f"{len(preds):,}")
+        k2.metric("Median predicted time", f"{preds['predicted_years'].median():.1f} yrs")
+        k3.metric("Fastest 10%", f"{preds['predicted_years'].quantile(0.10):.1f} yrs")
+
+        fig = px.histogram(
+            preds, x="predicted_years", nbins=50, color="lead_source",
+            color_discrete_sequence=px.colors.qualitative.Set2,
+            labels={"predicted_years": "Predicted median years to convert",
+                    "lead_source": "Lead source"},
+        )
+        fig.update_layout(
+            height=380, margin=dict(l=5, r=5, t=10, b=5),
+            plot_bgcolor="white", paper_bgcolor="white", legend_title_text="",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("**Fastest 10 leads to convert (predicted)**")
+        fast = preds.sort_values("predicted_median_days").head(10)
+        st.dataframe(
+            fast[["lead_id", "lead_source", "industry", "region",
+                  "predicted_years", "duration_days", "event_converted"]]
+                .style.format({"predicted_years": "{:.1f} yrs"}),
+            hide_index=True, use_container_width=True,
+        )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
+# ETL / Data quality page
+# ---------------------------------------------------------------------------
+
 @st.cache_data(ttl=300)
 def load_etl_metrics():
-    """Read live pipeline row counts and quality indicators from PostgreSQL."""
-    database_url = os.getenv("DATABASE_URL")
-    engine = create_engine(database_url)
+    engine = create_engine(os.getenv("DATABASE_URL"))
 
     row_counts = pd.read_sql("""
         SELECT 'Bronze' AS layer, 'raw_leads' AS table_name, COUNT(*) AS row_count FROM raw_leads
@@ -888,7 +982,6 @@ def render_data_etl():
     bronze_rows = row_counts.loc[row_counts["layer"] == "Bronze", "row_count"].sum()
     silver_rows = row_counts.loc[row_counts["layer"] == "Silver", "row_count"].sum()
     gold_rows = row_counts.loc[row_counts["layer"] == "Gold", "row_count"].sum()
-    rejected_rows = max(bronze_rows - silver_rows, 0)
     quality_row = quality.iloc[0]
     issues = (
         quality_row["missing_lead_ids"]
@@ -924,15 +1017,9 @@ def render_data_etl():
     left, right = st.columns([1.65, 1])
     with left:
         st.markdown('<div class="panel"><div class="panel-title">Pipeline Table Inventory</div>', unsafe_allow_html=True)
-        fig = px.bar(
-            row_counts,
-            x="table_name",
-            y="row_count",
-            color="layer",
-            barmode="group",
-            color_discrete_map={"Bronze": "#a66a2c", "Silver": "#8b929b", "Gold": "#d7a600"},
-            labels={"table_name": "PostgreSQL Table", "row_count": "Rows", "layer": "Layer"},
-        )
+        fig = px.bar(row_counts, x="table_name", y="row_count", color="layer", barmode="group",
+                     color_discrete_map={"Bronze": "#a66a2c", "Silver": "#8b929b", "Gold": "#d7a600"},
+                     labels={"table_name": "PostgreSQL Table", "row_count": "Rows", "layer": "Layer"})
         fig.update_layout(height=360, margin=dict(l=5, r=5, t=10, b=70), plot_bgcolor="white", paper_bgcolor="white")
         st.plotly_chart(fig, use_container_width=True)
         st.dataframe(row_counts, hide_index=True, use_container_width=True, height=280)
@@ -976,7 +1063,6 @@ def render_data_etl():
 
 
 def render_dashboard(source_df: pd.DataFrame):
-    """One executive page connecting pipeline health to business outcomes."""
     st.markdown('<div class="top-title">End-to-End Decision Dashboard</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="description">A single view from raw data ingestion through data quality, customer outcomes, risk signals, and campaign intervention results.</div>',
@@ -1036,11 +1122,9 @@ def render_dashboard(source_df: pd.DataFrame):
         c1, c2 = st.columns(2)
         with c1:
             st.markdown('<div class="panel"><div class="panel-title">Pipeline Health — Rows by Layer</div>', unsafe_allow_html=True)
-            fig = px.bar(
-                row_counts, x="table_name", y="row_count", color="layer",
-                color_discrete_map={"Bronze": "#a66a2c", "Silver": "#8b929b", "Gold": "#d7a600"},
-                labels={"table_name": "Table", "row_count": "Rows", "layer": "Layer"},
-            )
+            fig = px.bar(row_counts, x="table_name", y="row_count", color="layer",
+                         color_discrete_map={"Bronze": "#a66a2c", "Silver": "#8b929b", "Gold": "#d7a600"},
+                         labels={"table_name": "Table", "row_count": "Rows", "layer": "Layer"})
             fig.update_layout(height=320, margin=dict(l=5, r=5, t=10, b=70), plot_bgcolor="white", paper_bgcolor="white")
             st.plotly_chart(fig, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
@@ -1053,13 +1137,12 @@ def render_dashboard(source_df: pd.DataFrame):
                 conversions=("status", lambda value: (value == "Converted").sum()),
             )
             campaign["conversion_rate"] = campaign["conversions"] / campaign["leads"] * 100
-            fig = px.bar(
-                campaign, x="treatment_group", y="conversion_rate", text="conversion_rate",
-                color="treatment_group", color_discrete_map={"Control": "#3478df", "Treatment": "#1eb27b"},
-                labels={"treatment_group": "Campaign Group", "conversion_rate": "Conversion Rate (%)"},
-            )
+            fig = px.bar(campaign, x="treatment_group", y="conversion_rate", text="conversion_rate",
+                         color="treatment_group", color_discrete_map={"Control": "#3478df", "Treatment": "#1eb27b"},
+                         labels={"treatment_group": "Campaign Group", "conversion_rate": "Conversion Rate (%)"})
             fig.update_traces(texttemplate="%{text:.2f}%", textposition="outside")
-            fig.update_layout(height=320, margin=dict(l=5, r=5, t=10, b=5), showlegend=False, plot_bgcolor="white", paper_bgcolor="white")
+            fig.update_layout(height=320, margin=dict(l=5, r=5, t=10, b=5), showlegend=False,
+                              plot_bgcolor="white", paper_bgcolor="white")
             st.plotly_chart(fig, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1067,11 +1150,10 @@ def render_dashboard(source_df: pd.DataFrame):
         with c3:
             st.markdown('<div class="panel"><div class="panel-title">Risk Proxy by Industry</div>', unsafe_allow_html=True)
             risk_by_industry = risk_df.groupby("industry", as_index=False).agg(avg_risk_score=("risk_score", "mean")).sort_values("avg_risk_score", ascending=False).head(8)
-            fig = px.bar(
-                risk_by_industry, x="avg_risk_score", y="industry", orientation="h", color="avg_risk_score",
-                color_continuous_scale="Reds", labels={"avg_risk_score": "Average Risk Score", "industry": "Industry"},
-            )
-            fig.update_layout(height=320, margin=dict(l=5, r=5, t=10, b=5), coloraxis_showscale=False, plot_bgcolor="white", paper_bgcolor="white")
+            fig = px.bar(risk_by_industry, x="avg_risk_score", y="industry", orientation="h", color="avg_risk_score",
+                         color_continuous_scale="Reds", labels={"avg_risk_score": "Average Risk Score", "industry": "Industry"})
+            fig.update_layout(height=320, margin=dict(l=5, r=5, t=10, b=5), coloraxis_showscale=False,
+                              plot_bgcolor="white", paper_bgcolor="white")
             st.plotly_chart(fig, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1082,12 +1164,11 @@ def render_dashboard(source_df: pd.DataFrame):
                 conversions=("status", lambda value: (value == "Converted").sum()),
             )
             source["conversion_rate"] = source["conversions"] / source["leads"] * 100
-            fig = px.bar(
-                source.sort_values("conversion_rate", ascending=False), x="lead_source", y="conversion_rate",
-                color="conversion_rate", color_continuous_scale=["#b9d8ff", "#1769e0"],
-                labels={"lead_source": "Lead Source", "conversion_rate": "Conversion Rate (%)"},
-            )
-            fig.update_layout(height=320, margin=dict(l=5, r=5, t=10, b=5), coloraxis_showscale=False, plot_bgcolor="white", paper_bgcolor="white")
+            fig = px.bar(source.sort_values("conversion_rate", ascending=False), x="lead_source", y="conversion_rate",
+                         color="conversion_rate", color_continuous_scale=["#b9d8ff", "#1769e0"],
+                         labels={"lead_source": "Lead Source", "conversion_rate": "Conversion Rate (%)"})
+            fig.update_layout(height=320, margin=dict(l=5, r=5, t=10, b=5), coloraxis_showscale=False,
+                              plot_bgcolor="white", paper_bgcolor="white")
             st.plotly_chart(fig, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1097,8 +1178,7 @@ def render_dashboard(source_df: pd.DataFrame):
             priority[["lead_id", "company_name", "industry", "region", "status", "total_activities", "risk_score", "risk_tier", "expected_loss"]].style.format(
                 {"risk_score": "{:.2f}", "expected_loss": "${:,.0f}"}
             ),
-            hide_index=True,
-            use_container_width=True,
+            hide_index=True, use_container_width=True,
         )
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1138,6 +1218,7 @@ with st.sidebar:
             "⚗️  Risk Analysis",
             "🧪  Interventions",
             "🧠  ML Models",
+            "📈  Survival Analysis",
             "🗄️  Data & ETL",
             "📊  Dashboard",
             "⚙️  Settings"
@@ -1163,6 +1244,10 @@ if page == "🧪  Interventions":
 
 if page == "🧠  ML Models":
     render_ml_models()
+    st.stop()
+
+if page == "📈  Survival Analysis":
+    render_survival_page()
     st.stop()
 
 if page == "🗄️  Data & ETL":
@@ -1198,7 +1283,6 @@ if search_text:
     )
     df = df[search_mask]
 
-# Title
 st.markdown('<div class="top-title">CreditPulse</div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="top-subtitle">End-to-End Credit Risk & Customer Value Analytics Platform</div>',
@@ -1209,7 +1293,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# KPI metrics
 total_leads = len(df)
 converted = (df["status"] == "Converted").sum()
 conversion_rate = converted / total_leads * 100 if total_leads else 0
@@ -1252,7 +1335,6 @@ with main_col:
     groups = f4.multiselect("Risk Tier / Campaign", sorted(df["treatment_group"].dropna().unique()))
 
     filtered = df.copy()
-
     if regions:
         filtered = filtered[filtered["region"].isin(regions)]
     if sources:
@@ -1266,10 +1348,8 @@ with main_col:
 
     monthly = (
         filtered.groupby("month", as_index=False)
-        .agg(
-            leads=("lead_id", "count"),
-            converted=("status", lambda x: (x == "Converted").sum())
-        )
+        .agg(leads=("lead_id", "count"),
+             converted=("status", lambda x: (x == "Converted").sum()))
     )
     monthly["conversion_rate"] = monthly["converted"] / monthly["leads"] * 100
     monthly = monthly.tail(12)
@@ -1278,41 +1358,22 @@ with main_col:
 
     with chart1:
         st.markdown('<div class="panel-title">Customer Risk Vs. Portfolio Trend</div>', unsafe_allow_html=True)
-        fig = px.bar(
-            monthly,
-            x="month",
-            y="leads",
-            color_discrete_sequence=["#2ab17d"],
-            labels={"month": "", "leads": "Leads"}
-        )
-        fig.add_scatter(
-            x=monthly["month"],
-            y=monthly["conversion_rate"],
-            mode="lines+markers",
-            name="Conversion rate (%)",
-            yaxis="y2",
-            line=dict(color="#1769e0", width=3)
-        )
-        fig.update_layout(
-            height=310,
-            margin=dict(l=5, r=5, t=10, b=5),
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-            yaxis2=dict(overlaying="y", side="right", title="Conversion %"),
-            legend=dict(orientation="h", y=1.1)
-        )
+        fig = px.bar(monthly, x="month", y="leads", color_discrete_sequence=["#2ab17d"],
+                     labels={"month": "", "leads": "Leads"})
+        fig.add_scatter(x=monthly["month"], y=monthly["conversion_rate"],
+                        mode="lines+markers", name="Conversion rate (%)", yaxis="y2",
+                        line=dict(color="#1769e0", width=3))
+        fig.update_layout(height=310, margin=dict(l=5, r=5, t=10, b=5),
+                          plot_bgcolor="white", paper_bgcolor="white",
+                          yaxis2=dict(overlaying="y", side="right", title="Conversion %"),
+                          legend=dict(orientation="h", y=1.1))
         st.plotly_chart(fig, use_container_width=True)
 
     with chart2:
         st.markdown('<div class="panel-title">Risk Distribution</div>', unsafe_allow_html=True)
         status_data = filtered.groupby("status", as_index=False).agg(leads=("lead_id", "count"))
-        fig = px.pie(
-            status_data,
-            values="leads",
-            names="status",
-            hole=.62,
-            color_discrete_sequence=["#1eb27b", "#ffc21a", "#ef5350", "#3478df", "#865fd3"]
-        )
+        fig = px.pie(status_data, values="leads", names="status", hole=.62,
+                     color_discrete_sequence=["#1eb27b", "#ffc21a", "#ef5350", "#3478df", "#865fd3"])
         fig.update_layout(height=310, margin=dict(l=5, r=5, t=10, b=5), legend_title_text="")
         st.plotly_chart(fig, use_container_width=True)
 
@@ -1320,72 +1381,41 @@ with main_col:
 
     with chart3:
         st.markdown('<div class="panel-title">Top Risk Segments</div>', unsafe_allow_html=True)
-        segment_data = (
-            filtered.groupby("industry", as_index=False)
-            .agg(leads=("lead_id", "count"))
-            .sort_values("leads", ascending=False)
-            .head(5)
-        )
-        fig = px.bar(
-            segment_data,
-            x="leads",
-            y="industry",
-            orientation="h",
-            color="leads",
-            color_continuous_scale="Blues"
-        )
+        segment_data = (filtered.groupby("industry", as_index=False)
+                        .agg(leads=("lead_id", "count"))
+                        .sort_values("leads", ascending=False).head(5))
+        fig = px.bar(segment_data, x="leads", y="industry", orientation="h",
+                     color="leads", color_continuous_scale="Blues")
         fig.update_layout(height=270, margin=dict(l=5, r=5, t=10, b=5), coloraxis_showscale=False)
         st.plotly_chart(fig, use_container_width=True)
 
     with chart4:
         st.markdown('<div class="panel-title">Customer Lifetime Value (CLV)</div>', unsafe_allow_html=True)
-        region_data = (
-            filtered.groupby("region", as_index=False)
-            .agg(avg_value=("deal_value", "mean"))
-            .sort_values("avg_value", ascending=False)
-        )
-        fig = px.line(
-            region_data,
-            x="region",
-            y="avg_value",
-            markers=True,
-            color_discrete_sequence=["#1769e0"]
-        )
+        region_data = (filtered.groupby("region", as_index=False)
+                       .agg(avg_value=("deal_value", "mean"))
+                       .sort_values("avg_value", ascending=False))
+        fig = px.line(region_data, x="region", y="avg_value", markers=True,
+                      color_discrete_sequence=["#1769e0"])
         fig.update_layout(height=270, margin=dict(l=5, r=5, t=10, b=5), yaxis_title="Avg. Deal Value")
         st.plotly_chart(fig, use_container_width=True)
 
     with chart5:
         st.markdown('<div class="panel-title">Intervention Impact</div>', unsafe_allow_html=True)
-        campaign_data = (
-            filtered[filtered["received_campaign"] == True]
-            .groupby("treatment_group", as_index=False)
-            .agg(
-                leads=("lead_id", "count"),
-                converted=("status", lambda x: (x == "Converted").sum())
-            )
-        )
+        campaign_data = (filtered[filtered["received_campaign"] == True]
+                         .groupby("treatment_group", as_index=False)
+                         .agg(leads=("lead_id", "count"),
+                              converted=("status", lambda x: (x == "Converted").sum())))
         campaign_data["conversion_rate"] = campaign_data["converted"] / campaign_data["leads"] * 100
-
-        fig = px.bar(
-            campaign_data,
-            x="treatment_group",
-            y="conversion_rate",
-            color="treatment_group",
-            color_discrete_map={"Control": "#3478df", "Treatment": "#1eb27b"}
-        )
+        fig = px.bar(campaign_data, x="treatment_group", y="conversion_rate", color="treatment_group",
+                     color_discrete_map={"Control": "#3478df", "Treatment": "#1eb27b"})
         fig.update_layout(height=270, margin=dict(l=5, r=5, t=10, b=5), showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown('<div class="panel-title">Recent Customers</div>', unsafe_allow_html=True)
     st.dataframe(
-        filtered[
-            [
-                "lead_id", "company_name", "industry", "region",
-                "status", "opportunity_stage", "deal_value"
-            ]
-        ].head(10),
-        hide_index=True,
-        use_container_width=True
+        filtered[["lead_id", "company_name", "industry", "region",
+                  "status", "opportunity_stage", "deal_value"]].head(10),
+        hide_index=True, use_container_width=True
     )
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -1393,13 +1423,9 @@ with main_col:
 with insights_col:
     st.markdown('<div class="panel"><div class="panel-title">💡 Key Insights</div>', unsafe_allow_html=True)
 
-    best_source_data = (
-        filtered.groupby("lead_source", as_index=False)
-        .agg(
-            leads=("lead_id", "count"),
-            converted=("status", lambda x: (x == "Converted").sum())
-        )
-    )
+    best_source_data = (filtered.groupby("lead_source", as_index=False)
+                        .agg(leads=("lead_id", "count"),
+                             converted=("status", lambda x: (x == "Converted").sum())))
     best_source_data["rate"] = best_source_data["converted"] / best_source_data["leads"] * 100
     best_source = best_source_data.sort_values("rate", ascending=False).iloc[0]
 
@@ -1424,7 +1450,6 @@ with insights_col:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- Model Performance — reads real metadata -------------------------
     st.markdown('<div class="panel"><div class="panel-title">🧠 Model Performance</div>', unsafe_allow_html=True)
     _meta = load_model_metadata()
     if _meta:
