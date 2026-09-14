@@ -1,0 +1,3 @@
+def render_survival_page():
+    """PLACEHOLDER ? will be overwritten by the next command"""
+    pass
