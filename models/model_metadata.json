@@ -1,0 +1,57 @@
+{
+    "best_model": "Random Forest",
+    "model_path": "models/random_forest_pipeline.pkl",
+    "feature_columns": {
+        "numeric": [
+            "total_activities",
+            "company_size",
+            "received_campaign"
+        ],
+        "categorical": [
+            "industry",
+            "lead_source",
+            "region",
+            "job_title",
+            "treatment_group",
+            "campaign_response"
+        ],
+        "target": "event_converted"
+    },
+    "risk_tier_thresholds": {
+        "method": "quantile",
+        "low_quantile": 0.2,
+        "high_quantile": 0.8,
+        "q20": 0.26304471018708564,
+        "q80": 0.6042298639590643
+    },
+    "all_model_results": {
+        "Logistic Regression": {
+            "AUC": 0.7418,
+            "Accuracy": 0.6614,
+            "F1": 0.4688,
+            "Precision": 0.3571,
+            "Recall": 0.6822
+        },
+        "Random Forest": {
+            "AUC": 0.7667,
+            "Accuracy": 0.6948,
+            "F1": 0.4939,
+            "Precision": 0.3878,
+            "Recall": 0.68
+        },
+        "XGBoost": {
+            "AUC": 0.766,
+            "Accuracy": 0.6904,
+            "F1": 0.4979,
+            "Precision": 0.3861,
+            "Recall": 0.7011
+        }
+    },
+    "best_model_metrics": {
+        "AUC": 0.7667,
+        "Accuracy": 0.6948,
+        "F1": 0.4939,
+        "Precision": 0.3878,
+        "Recall": 0.68
+    }
+}
