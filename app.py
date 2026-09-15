@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import pandas as pd
 import numpy as np
@@ -823,6 +823,190 @@ def render_survival_page():
 
 
 # ---------------------------------------------------------------------------
+# CLV page
+# ---------------------------------------------------------------------------
+
+@st.cache_data(ttl=300)
+def load_clv_summary():
+    if not os.path.exists("models/clv_summary.json"):
+        return None
+    with open("models/clv_summary.json") as f:
+        return json.load(f)
+
+
+@st.cache_data(ttl=300)
+def load_clv_predictions():
+    engine = create_engine(os.getenv("DATABASE_URL"))
+    try:
+        return pd.read_sql("""
+            SELECT c.lead_id, c.clv_discounted, c.clv_undiscounted, c.clv_tier,
+                   c.conversion_probability, c.effective_deal_value,
+                   c.median_years, c.discount_factor,
+                   c.industry, c.lead_source, c.region,
+                   s.risk_tier, l.event_converted
+            FROM ml_clv_predictions c
+            LEFT JOIN ml_lead_scores s ON s.lead_id = c.lead_id
+            LEFT JOIN lead_summary l ON l.lead_id = c.lead_id
+        """, engine)
+    except Exception:
+        return pd.DataFrame()
+
+
+def render_clv_page():
+    st.markdown('<div class="top-title">Customer Lifetime Value</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="description">Discounted CLV per lead — '
+        'combining conversion probability (Phase 6), time-to-convert (Phase 7), '
+        'and deal value into a single dollar figure.</div>',
+        unsafe_allow_html=True,
+    )
+
+    summary = load_clv_summary()
+    if summary is None:
+        st.warning("No CLV model found. Run `python scripts/clv_modeling.py` first.")
+        return
+
+    agg = summary.get("aggregate_stats", {})
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Portfolio CLV", f"${agg.get('total_clv_discounted', 0):,.0f}")
+    c2.metric("Median CLV per lead", f"${agg.get('median_clv_discounted', 0):,.0f}")
+    c3.metric("Mean CLV per lead", f"${agg.get('mean_clv_discounted', 0):,.0f}")
+    c4.metric("Discount rate", f"{summary.get('discount_rate_annual', 0):.0%}/yr")
+
+    st.success(
+        f"CLV computed for {agg.get('total_leads', 0):,} leads. "
+        f"Median time-to-convert of {summary.get('fallback_lifetime_years', 5)} years "
+        f"used as fallback horizon when Cox prediction was unavailable."
+    )
+
+    df = load_clv_predictions()
+    if df.empty:
+        st.info("No rows in `ml_clv_predictions` yet.")
+        return
+
+    left, right = st.columns(2)
+    with left:
+        st.markdown('<div class="panel-title">CLV Distribution (log scale)</div>', unsafe_allow_html=True)
+        plot_df = df[df["clv_discounted"] > 0].copy()
+        fig = px.histogram(plot_df, x="clv_discounted", nbins=60, color="clv_tier",
+                           color_discrete_map={"High": "#1eb27b", "Medium": "#ffc21a", "Low": "#ef5350"},
+                           log_y=True)
+        fig.update_layout(height=340, margin=dict(l=5, r=5, t=10, b=5),
+                          plot_bgcolor="white", paper_bgcolor="white",
+                          xaxis_title="Discounted CLV ($)", yaxis_title="Leads (log)",
+                          legend_title_text="CLV Tier")
+        st.plotly_chart(fig, use_container_width=True)
+
+    with right:
+        st.markdown('<div class="panel-title">CLV Tier Breakdown</div>', unsafe_allow_html=True)
+        tier_counts = (df["clv_tier"].value_counts()
+                       .reindex(["High", "Medium", "Low"]).fillna(0).reset_index())
+        tier_counts.columns = ["clv_tier", "count"]
+        fig = px.pie(tier_counts, names="clv_tier", values="count", hole=0.6, color="clv_tier",
+                     color_discrete_map={"High": "#1eb27b", "Medium": "#ffc21a", "Low": "#ef5350"})
+        fig.update_layout(height=340, margin=dict(l=5, r=5, t=10, b=5), legend_title_text="")
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown('<div class="panel"><div class="panel-title">'
+                'Value × Risk Quadrant — Where to Focus</div>', unsafe_allow_html=True)
+    st.caption(
+        "Each point is a segment (industry × lead source). "
+        "X-axis = mean conversion probability. Y-axis = mean discounted CLV. "
+        "Bubble size = number of leads. Top-right = high-value × high-probability segments."
+    )
+    seg = df.groupby(["industry", "lead_source"], as_index=False).agg(
+        mean_prob=("conversion_probability", "mean"),
+        mean_clv=("clv_discounted", "mean"),
+        n_leads=("lead_id", "count"),
+    )
+    seg = seg[seg["n_leads"] >= 100]
+    fig = px.scatter(seg, x="mean_prob", y="mean_clv", size="n_leads",
+                     color="mean_clv",
+                     color_continuous_scale=["#ef5350", "#ffc21a", "#1eb27b"],
+                     hover_data={"industry": True, "lead_source": True, "n_leads": True},
+                     labels={"mean_prob": "Mean conversion probability",
+                             "mean_clv": "Mean discounted CLV ($)"})
+    fig.update_layout(height=460, margin=dict(l=5, r=5, t=10, b=5),
+                      plot_bgcolor="white", paper_bgcolor="white",
+                      coloraxis_showscale=False)
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown('<div class="panel"><div class="panel-title">'
+                'Top 25 Leads by Discounted CLV</div>', unsafe_allow_html=True)
+    top = df.sort_values("clv_discounted", ascending=False).head(25)
+    st.dataframe(top[["lead_id", "industry", "lead_source", "region",
+                      "conversion_probability", "effective_deal_value",
+                      "median_years", "discount_factor",
+                      "clv_discounted", "clv_tier", "risk_tier", "event_converted"]]
+                 .style.format({
+                     "conversion_probability": "{:.1%}",
+                     "effective_deal_value": "${:,.0f}",
+                     "median_years": "{:.1f} yrs",
+                     "discount_factor": "{:.3f}",
+                     "clv_discounted": "${:,.0f}",
+                 }),
+                 hide_index=True, use_container_width=True, height=460)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown('<div class="panel"><div class="panel-title">Average CLV by Segment</div>', unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**By industry**")
+        by_ind = df.groupby("industry", as_index=False).agg(
+            mean_clv=("clv_discounted", "mean"),
+            total_clv=("clv_discounted", "sum"),
+            n=("lead_id", "count"),
+        ).sort_values("mean_clv", ascending=False)
+        fig = px.bar(by_ind, x="mean_clv", y="industry", orientation="h",
+                     color="mean_clv", color_continuous_scale=["#b9d8ff", "#1769e0"])
+        fig.update_layout(height=320, margin=dict(l=5, r=5, t=10, b=5),
+                          coloraxis_showscale=False, plot_bgcolor="white", paper_bgcolor="white",
+                          xaxis_title="Mean discounted CLV ($)", yaxis_title="")
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        st.markdown("**By lead source**")
+        by_src = df.groupby("lead_source", as_index=False).agg(
+            mean_clv=("clv_discounted", "mean"),
+            total_clv=("clv_discounted", "sum"),
+            n=("lead_id", "count"),
+        ).sort_values("mean_clv", ascending=False)
+        fig = px.bar(by_src, x="mean_clv", y="lead_source", orientation="h",
+                     color="mean_clv", color_continuous_scale=["#b9d8ff", "#1769e0"])
+        fig.update_layout(height=320, margin=dict(l=5, r=5, t=10, b=5),
+                          coloraxis_showscale=False, plot_bgcolor="white", paper_bgcolor="white",
+                          xaxis_title="Mean discounted CLV ($)", yaxis_title="")
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Key finding callout — uses HTML to avoid LaTeX interpretation of "$"
+    if not by_ind.empty and not by_src.empty:
+        best_ind = by_ind.iloc[0]
+        best_src = by_src.iloc[0]
+        st.markdown(
+            f"""
+            <div class="panel" style="background: #ecfdf5; border-color: #1eb27b;">
+                <div class="panel-title">Key Finding</div>
+                <p style="color: #065f46; margin-top: 6px;">
+                    The highest-value industry segment is
+                    <b>{best_ind['industry']}</b>
+                    (mean discounted CLV <b>${best_ind['mean_clv']:,.0f}</b>)
+                    and the highest-value lead source is
+                    <b>{best_src['lead_source']}</b>
+                    (mean discounted CLV <b>${best_src['mean_clv']:,.0f}</b>).
+                    These are the segments where acquisition spend has the
+                    largest expected return.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # ETL / Data quality page
 # ---------------------------------------------------------------------------
 
@@ -1092,6 +1276,7 @@ with st.sidebar:
             "🧪  Interventions",
             "🧠  ML Models",
             "📈  Survival Analysis",
+            "💎  CLV",
             "🗄️  Data & ETL",
             "📊  Dashboard",
             "⚙️  Settings"
@@ -1121,6 +1306,10 @@ if page == "🧠  ML Models":
 
 if page == "📈  Survival Analysis":
     render_survival_page()
+    st.stop()
+
+if page == "💎  CLV":
+    render_clv_page()
     st.stop()
 
 if page == "🗄️  Data & ETL":

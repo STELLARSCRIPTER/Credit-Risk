@@ -1,0 +1,21 @@
+{
+    "model_version": "CLV v1 (survival-integrated)",
+    "discount_rate_annual": 0.1,
+    "fallback_lifetime_years": 5,
+    "clv_quantile_thresholds": {
+        "q50": 1936.1564824383217,
+        "q80": 4505.560817654478
+    },
+    "aggregate_stats": {
+        "total_leads": 50871,
+        "leads_with_probability": 50871,
+        "total_clv_discounted": 170444069.17827302,
+        "median_clv_discounted": 1936.1564824383217,
+        "mean_clv_discounted": 3350.5154052067587,
+        "tier_counts": {
+            "Low": 25435,
+            "Medium": 15261,
+            "High": 10175
+        }
+    }
+}
