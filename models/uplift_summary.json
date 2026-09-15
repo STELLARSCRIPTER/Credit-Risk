@@ -1,0 +1,20 @@
+{
+    "model_version": "Uplift T-learner v1",
+    "arm_metrics": {
+        "treatment_auc": 0.7020334020814072,
+        "control_auc": 0.7024147955062995
+    },
+    "segment_counts": {
+        "Persuadable": 10730,
+        "Lost Cause": 5191,
+        "Sure Thing": 4356,
+        "Do Not Disturb": 2612
+    },
+    "aggregate": {
+        "n_leads": 22889,
+        "mean_uplift": 0.04823833703994751,
+        "median_uplift": 0.04368641972541809,
+        "share_persuadable": 0.4687841321158635,
+        "share_do_not_disturb": 0.11411595089344226
+    }
+}

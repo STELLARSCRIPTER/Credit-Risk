@@ -1,94 +1,558 @@
-Here's the full README. It tells the whole story — from project positioning through the ML pipeline, including the infrastructure incident — and is honest about the synthetic data origin. Save it as `README.md` at the project root.
+# CreditPulse — Marketing & Revenue Analytics Platform
 
-```markdown
-# CreditPulse — End-to-End Credit Risk & Customer Value Analytics Platform
+> **Which leads are most likely to convert, when will they convert, how valuable are they, and which interventions should we prioritize?**
 
-**A hybrid Marketing/RevOps analytics engineering project** covering the full journey from raw synthetic CRM data through a medallion data warehouse, ML lead scoring, causal intervention analysis, and an interactive decision dashboard.
+CreditPulse is an **end-to-end Marketing / RevOps Analytics Engineering project** that combines data engineering, machine learning, survival analysis, customer lifetime value (CLV), and campaign analytics into a single decision-support platform.
 
-*"Which customers are valuable, which are risky, and what should we do about it?"*
+The project simulates a B2B CRM environment and takes data through:
 
----
-
-## Table of Contents
-
-1. [Project Overview](#project-overview)
-2. [Architecture](#architecture)
-3. [Tech Stack](#tech-stack)
-4. [Repository Structure](#repository-structure)
-5. [Data Model](#data-model)
-6. [Pipeline Stages](#pipeline-stages)
-7. [Machine Learning](#machine-learning)
-8. [Dashboard](#dashboard)
-9. [Infrastructure Notes](#infrastructure-notes)
-10. [Setup & Running Locally](#setup--running-locally)
-11. [Key Design Decisions](#key-design-decisions)
-12. [Project Status](#project-status)
+**Synthetic CRM Data → Medallion ETL → Analytics Warehouse → ML → Survival Analysis → CLV → Campaign Analysis → Dashboard**
 
 ---
 
 ## Project Overview
 
-CreditPulse began as a fintech credit-risk portfolio project and was repositioned to a **hybrid Marketing/RevOps Analytics Engineer** role. The data engineering skeleton (medallion architecture, star schema, ML, causal inference, dashboarding) is domain-agnostic — only the top-layer use case changed, from credit-default risk to **lead scoring, conversion prediction, and campaign attribution**.
+CreditPulse was originally designed as a fintech credit-risk project and evolved into a **Marketing / RevOps analytics platform**.
 
-| Fintech version (original) | CRM/RevOps version (current) |
-|---|---|
-| Customer default risk scoring | Lead/opportunity scoring (will this lead convert?) |
-| Survival analysis: time-to-default | Survival analysis: time-to-conversion |
-| CLV + default risk decision matrix | CLV + lead score decision matrix |
-| Intervention/causal experiment (loan offer) | Campaign/outreach A-B test (uplift modeling) |
-| Credit risk committee memo | RevOps/marketing leadership memo |
+The underlying engineering architecture remains the same, while the business problem shifted from financial default prediction to revenue and customer analytics.
 
-**Important note on the data:** All records in this project are **synthetically generated** using the `Faker` library (multi-locale name generation), NumPy, and Pandas. The generator deliberately simulates a realistic signal-to-noise structure — lead-source quality, industry fit, job-title seniority, company size sweet-spots, and campaign response effects all drive conversion probability through a logistic model. The dataset is designed so that a downstream ML model can recover approximately 0.75–0.80 AUC, which mirrors the practical difficulty of real B2B lead scoring.
+| Original Fintech Concept     | CreditPulse Use Case       |
+| ---------------------------- | -------------------------- |
+| Credit default prediction    | Lead conversion prediction |
+| Time-to-default              | Time-to-conversion         |
+| Credit risk + customer value | Lead score + CLV           |
+| Loan intervention            | Campaign intervention      |
+| Credit risk reporting        | RevOps decision support    |
 
----
+The goal is to demonstrate how a data professional can connect:
 
-## Architecture
-
-The project follows a **medallion architecture** (Bronze → Silver → Gold), the same pattern used in modern cloud data warehouses (Databricks, Snowflake, Microsoft Fabric).
-
-```
-CRM data sources (leads, opportunities, activities, campaign touches)
-        │
-        ▼
-   Bronze (raw)          — as-is from CRM exports, never mutated
-        │
-        ▼
-   Silver (cleaned)      — deduplicated, validated, quarantined bad rows
-        │
-        ▼
-   Gold (curated)        — star schema + business-ready lead_summary table
-        │
-        ▼
-   Analytics & ML        — lead scoring, survival analysis, CLV, causal tests
-        │
-        ▼
-   Decision layer        — Streamlit dashboard + RevOps memo
-```
+**Data Engineering + Machine Learning + Statistics + Marketing Analytics + Business Decision-Making**
 
 ---
 
-## Tech Stack
+## Important: Synthetic Data
 
-| Purpose | Tool |
-|---|---|
-| Core language | Python 3.13 |
-| Realistic random data | NumPy / SciPy |
-| Fake but realistic fields | Faker (multi-locale, 60+ countries) |
-| Data assembly & tables | Pandas |
-| Storage | PostgreSQL 18.6 (Windows) |
-| DB connectivity | SQLAlchemy, psycopg2-binary |
-| Config/secrets | python-dotenv (`.env`) |
-| ML | scikit-learn, XGBoost |
-| Dashboard | Streamlit, Plotly |
-| Version control | Git + GitHub |
-| Diagramming | draw.io |
+All data in CreditPulse is **synthetically generated**.
+
+The dataset is created using:
+
+* Python
+* Faker
+* NumPy
+* Pandas
+
+Faker generates realistic multi-locale customer and company information, while the data-generation process introduces realistic relationships between:
+
+* Lead source
+* Industry
+* Job-title seniority
+* Company size
+* Region
+* Engagement
+* Campaign exposure
+* Campaign response
+* Conversion
+
+The conversion outcome is generated using a logistic probability model with controlled signal and noise.
+
+This allows the project to demonstrate a realistic ML workflow without exposing real customer or company data.
 
 ---
 
-## Repository Structure
+# Architecture
 
+CreditPulse follows a **Bronze → Silver → Gold medallion architecture**.
+
+```text
+                    SYNTHETIC CRM DATA
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │     BRONZE      │
+                  │   Raw ingestion │
+                  └────────┬────────┘
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │     SILVER      │
+                  │ Cleaning & DQ   │
+                  │ Deduplication   │
+                  │ Quarantine      │
+                  └────────┬────────┘
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │      GOLD       │
+                  │  Star Schema    │
+                  │ Lead Summary    │
+                  └────────┬────────┘
+                           │
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+          ML Scoring   Survival       CLV
+              │         Analysis        │
+              └────────────┼────────────┘
+                           ▼
+                  Campaign / Uplift
+                      Analysis
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │   Streamlit     │
+                  │   Dashboard     │
+                  └─────────────────┘
 ```
-Credit Risk/
+
+The architecture is intentionally similar to patterns used in modern analytics platforms and cloud data warehouses.
+
+---
+
+# Data Model
+
+The synthetic dataset contains four primary source tables.
+
+| Table                  |    Rows | Description                                       |
+| ---------------------- | ------: | ------------------------------------------------- |
+| `raw_leads`            |  50,871 | Lead, person, company and acquisition information |
+| `raw_opportunities`    |  30,401 | Opportunity and deal information                  |
+| `raw_activities`       | 249,186 | Calls, emails, meetings and other engagement      |
+| `raw_campaign_touches` |  22,889 | Campaign treatment/control interactions           |
+
+### Gold Layer
+
+The Gold layer contains a dimensional model consisting of:
+
+* `dim_time`
+* `dim_leads`
+* `fact_activities`
+* `fact_opportunities`
+* `fact_campaign_touches`
+
+It also contains a business-ready:
+
+### `lead_summary`
+
+This table brings together the features required by downstream analytics and ML.
+
+Key fields include:
+
+* Lead attributes
+* Industry
+* Company size
+* Lead source
+* Region
+* Job title
+* Activity counts
+* Campaign exposure
+* Treatment group
+* Campaign response
+* Opportunity information
+* Deal value
+* Conversion status
+* Time-to-conversion
+
+---
+
+# Data Quality & ETL
+
+The ETL pipeline intentionally introduces common CRM data-quality problems so that they can be handled as part of the engineering workflow.
+
+### Examples
+
+| Problem           | Example                | Handling                     |
+| ----------------- | ---------------------- | ---------------------------- |
+| Missing values    | Missing company size   | Preserve NULL + missing flag |
+| Incorrect types   | `"163 emp"`            | Regex conversion             |
+| Duplicate records | Duplicate activity ID  | Deduplication                |
+| Orphan records    | Invalid `lead_id`      | Quarantine                   |
+| Extreme values    | Unrealistic deal value | Flag as outlier              |
+
+### Silver Layer Principles
+
+* Raw data is never silently overwritten.
+* Nulls are preserved during cleaning.
+* Duplicates are removed.
+* Invalid foreign keys are quarantined.
+* Outliers are flagged.
+* Modeling decisions are kept separate from data cleaning.
+
+Example:
+
+```text
+Bronze
+   │
+   ├── Valid records ──────► Silver
+   │
+   └── Invalid records ────► Rejection / Quarantine
+```
+
+This creates an auditable data-quality process rather than simply deleting bad records.
+
+---
+
+# Machine Learning — Lead Scoring
+
+### Business Question
+
+> **Which leads are most likely to convert?**
+
+The ML pipeline compares:
+
+* Logistic Regression
+* Random Forest
+* XGBoost
+
+### Workflow
+
+```text
+Gold lead_summary
+       │
+       ▼
+Feature Selection
+       │
+       ▼
+Train / Test Split
+       │
+       ▼
+Preprocessing
+       │
+       ▼
+Model Training
+       │
+       ▼
+Model Comparison
+       │
+       ▼
+Best Model
+       │
+       ▼
+Conversion Probability
+       │
+       ▼
+Lead Tier
+```
+
+### Features
+
+**Numeric**
+
+* `total_activities`
+* `company_size`
+* `received_campaign`
+
+**Categorical**
+
+* `industry`
+* `lead_source`
+* `region`
+* `job_title`
+* `treatment_group`
+* `campaign_response`
+
+### Target
+
+```text
+event_converted
+```
+
+### Feature Leakage Prevention
+
+The following fields are deliberately excluded:
+
+* `deal_value`
+* `duration_days`
+* `status`
+* `opportunity_stage`
+
+These fields contain information that would not legitimately be available at prediction time and could leak the outcome into the model.
+
+---
+
+## Model Results
+
+| Model               |        AUC |   Accuracy |         F1 |  Precision |     Recall |
+| ------------------- | ---------: | ---------: | ---------: | ---------: | ---------: |
+| Logistic Regression |     0.7418 |     0.6614 |     0.4688 |     0.3571 |     0.6822 |
+| **Random Forest**   | **0.7667** | **0.6948** | **0.4939** | **0.3878** | **0.6800** |
+| XGBoost             |     0.7660 |     0.6904 |     0.4979 |     0.3861 |     0.7011 |
+
+### Selected Model
+
+**Random Forest — AUC 0.7667**
+
+Random Forest was selected because it achieved the highest holdout AUC, with XGBoost performing almost identically.
+
+The dataset intentionally contains noise, so an AUC around 0.77 is more meaningful than artificially optimizing the synthetic data toward an unrealistically high score.
+
+---
+
+# Lead Risk Tiers
+
+Instead of using arbitrary probability thresholds, CreditPulse uses **quantile-based tiers**.
+
+```text
+Top 20%       → High Priority
+Middle 60%    → Medium Priority
+Bottom 20%    → Low Priority
+```
+
+This approach allows the tiers to adapt when the underlying score distribution changes.
+
+The thresholds are stored in model metadata for reproducibility.
+
+---
+
+# Survival Analysis
+
+### Business Question
+
+> **Not only "will this lead convert?" — but "when will it convert?"**
+
+Classification predicts the probability of conversion.
+
+Survival analysis adds the **time dimension**.
+
+CreditPulse uses:
+
+* Kaplan-Meier analysis
+* Cox Proportional Hazards
+
+It also handles **right-censoring**, meaning leads that have not converted by the dataset's snapshot date are not incorrectly treated as failures.
+
+---
+
+## Kaplan-Meier Results
+
+| Lead Source  | Median Time | Interpretation             |
+| ------------ | ----------: | -------------------------- |
+| **Referral** | ~3,787 days | Fastest converting segment |
+| Webinar      | ~5,430 days | Relatively faster          |
+| Trade Show   | ~5,652 days | Moderate                   |
+| LinkedIn     | ~6,031 days | Slower                     |
+| Website      | Not reached | Fewer than 50% converted   |
+| Cold Call    | Not reached | Fewer than 50% converted   |
+
+---
+
+## Cox Proportional Hazards
+
+| Feature               | Hazard Ratio | Interpretation                |
+| --------------------- | -----------: | ----------------------------- |
+| **Referral**          |     **3.38** | Converts substantially faster |
+| Webinar               |         2.36 | Faster conversion             |
+| SaaS                  |         2.15 | Higher conversion speed       |
+| **Received campaign** |     **1.52** | 52% higher conversion hazard  |
+| FinServ               |         1.88 | Faster than baseline          |
+| Total activities      |         1.03 | Small positive effect         |
+| EMEA                  |         0.91 | Slightly slower               |
+
+### Model Result
+
+**C-index: 0.6753**
+
+The C-index answers a different question from AUC:
+
+* **AUC:** Can the model rank converters above non-converters?
+* **C-index:** Can the model correctly rank which lead converts earlier?
+
+---
+
+# Customer Lifetime Value
+
+### Business Question
+
+> **Which leads or customers are worth the most?**
+
+CreditPulse combines:
+
+1. Conversion probability
+2. Deal value
+3. Time-to-conversion
+
+into a survival-adjusted CLV estimate.
+
+### Formula
+
+```text
+CLV =
+P(convert)
+× effective deal value
+× exp(-r × t)
+```
+
+Where:
+
+* `P(convert)` = ML conversion probability
+* `effective deal value` = observed deal value or estimated industry median
+* `r` = annual discount rate
+* `t` = predicted median time-to-conversion
+
+The model therefore accounts for both **probability and timing**.
+
+A lead expected to generate the same revenue several years later receives a lower present value than a lead expected to convert sooner.
+
+---
+
+## CLV Results
+
+| Metric                          |        Value |
+| ------------------------------- | -----------: |
+| **Total Portfolio CLV**         | **$170.44M** |
+| **Median CLV / Lead**           |   **$1,936** |
+| **Mean CLV / Lead**             |   **$3,351** |
+| **P90 CLV**                     |   **$7,517** |
+| **Maximum CLV**                 | **$131,689** |
+| Discount Rate                   |   10% / year |
+| Leads with estimated deal value |       20,473 |
+
+### Highest-value segments
+
+**Industry:** SaaS
+**Lead Source:** Referral
+
+This creates an important cross-model insight:
+
+> Referral leads convert faster and also generate higher expected value.
+
+---
+
+## CLV Data Limitation
+
+Approximately 40% of leads do not have an associated opportunity.
+
+For these leads, the model uses the **industry median deal value** as an estimate.
+
+These records are explicitly flagged using:
+
+```text
+used_imputed_deal
+```
+
+This allows the dashboard to distinguish between observed and estimated CLV rather than presenting all values as equally certain.
+
+---
+
+# Campaign & Uplift Analysis
+
+The Gold layer contains:
+
+* `treatment_group`
+* `campaign_response`
+
+This enables the next stage of the project:
+
+### Uplift Modeling
+
+Instead of asking:
+
+> "Who is likely to convert?"
+
+uplift modeling asks:
+
+> **"Who is likely to convert because of the intervention?"**
+
+The planned model will identify four segments:
+
+| Segment             | Meaning                                   | Action                 |
+| ------------------- | ----------------------------------------- | ---------------------- |
+| **Persuadables**    | Campaign increases conversion probability | Target                 |
+| **Sure Things**     | Likely to convert anyway                  | Reduce campaign spend  |
+| **Lost Causes**     | Unlikely to convert regardless            | Avoid excessive effort |
+| **Do Not Disturbs** | Intervention may reduce conversion        | Avoid                  |
+
+Planned approaches include:
+
+* T-Learner
+* X-Learner
+* Uplift scores
+* Qini curve
+* Incremental conversion analysis
+
+This is intended to move the project from **predictive analytics to prescriptive marketing analytics**.
+
+---
+
+# Streamlit Dashboard
+
+The project includes an interactive Streamlit dashboard.
+
+### Dashboard Sections
+
+| Page                   | Purpose                                |
+| ---------------------- | -------------------------------------- |
+| 🏠 Overview            | Portfolio KPIs and key insights        |
+| 👥 Customer Analytics  | Lead search and customer 360           |
+| ⚠️ Risk Analysis       | Lead priority and risk segmentation    |
+| 🧪 Interventions       | Treatment vs control analysis          |
+| 🧠 ML Models           | Model comparison and calibration       |
+| 📈 Survival Analysis   | Conversion timing and hazard ratios    |
+| 💎 CLV                 | Customer value and value-risk analysis |
+| 🗄️ Data & ETL         | Pipeline and data-quality monitoring   |
+| 📊 Executive Dashboard | End-to-end decision view               |
+| ⚙️ Settings            | Application configuration              |
+
+### ML Dashboard
+
+Includes:
+
+* AUC
+* Accuracy
+* F1
+* Precision
+* Recall
+* Model comparison
+* Conversion probability distribution
+* Lead tiers
+* Calibration analysis
+
+### Survival Dashboard
+
+Includes:
+
+* C-index
+* Kaplan-Meier curves
+* Median conversion time
+* Cox hazard ratios
+* Confidence intervals
+* Per-lead predicted conversion timing
+
+### CLV Dashboard
+
+Includes:
+
+* Portfolio CLV
+* CLV distribution
+* CLV tiers
+* Value vs risk analysis
+* Top-value leads
+* CLV by industry
+* CLV by lead source
+
+---
+
+# Technology Stack
+
+| Area                  | Technology            |
+| --------------------- | --------------------- |
+| Programming           | Python 3.13           |
+| Data Processing       | Pandas, NumPy, SciPy  |
+| Synthetic Data        | Faker                 |
+| Database              | PostgreSQL 18.6       |
+| SQL Connectivity      | SQLAlchemy, psycopg2  |
+| Machine Learning      | Scikit-learn, XGBoost |
+| Survival Analysis     | Lifelines             |
+| Dashboard             | Streamlit, Plotly     |
+| Configuration         | python-dotenv         |
+| Version Control       | Git, GitHub           |
+| Architecture Diagrams | draw.io               |
+| Planned Orchestration | Apache Airflow        |
+
+---
+
+# Repository Structure
+
+```text
+CreditPulse/
 │
 ├── data/
 │   └── raw/
@@ -98,423 +562,332 @@ Credit Risk/
 │       └── raw_campaign_touches.csv
 │
 ├── models/
-│   ├── random_forest_pipeline.pkl     # shipped model
-│   └── model_metadata.json            # metrics, feature columns, tier thresholds
+│   ├── random_forest_pipeline.pkl
+│   ├── model_metadata.json
+│   ├── survival_cox_summary.json
+│   ├── survival_km_by_segment.json
+│   └── clv_summary.json
 │
 ├── scripts/
-│   ├── generate_synthetic_data.py     # Bronze CSV generation
-│   ├── load_to_postgres.py            # CSV → Bronze tables
-│   ├── clean_bronze_to_silver.py      # Bronze → Silver cleaning
-│   ├── run_sql_file.py                # SQL file runner utility
-│   ├── train_ml_models.py             # ML pipeline
-│   └── check_disk.py                  # disk diagnostics helper
+│   ├── generate_synthetic_data.py
+│   ├── load_to_postgres.py
+│   ├── clean_bronze_to_silver.py
+│   ├── run_sql_file.py
+│   ├── create_survival_view.py
+│   ├── train_ml_models.py
+│   ├── survival_analysis.py
+│   ├── clv_modeling.py
+│   └── check_disk.py
 │
 ├── sql/
 │   ├── create_bronze_tables.sql
 │   ├── create_silver_tables.sql
 │   ├── create_gold_tables.sql
+│   ├── create_survival_tables.sql
 │   └── create_ml_tables.sql
 │
-├── app.py                             # Streamlit dashboard
-├── .env                               # DB credentials (not committed)
-├── .env.example                       # template
-├── .gitignore
+├── app.py
 ├── requirements.txt
+├── .env.example
+├── .gitignore
 └── README.md
 ```
 
 ---
 
-## Data Model
+# Running the Project
 
-### Synthetic data generation
+## Prerequisites
 
-The generator (`scripts/generate_synthetic_data.py`) produces four raw tables with realistic multi-year growth (2 leads/day in 2010 → 32/day in 2026, weekends discounted) and injects deliberate data-quality problems for the Silver layer to solve.
+* Python 3.11+
+* PostgreSQL 18+
+* Git
 
-| Table | Row count | Contents |
-|---|---|---|
-| `raw_leads` | 50,871 | Person + company + source + region |
-| `raw_opportunities` | 30,401 | Deal value, stage, close dates |
-| `raw_activities` | 249,186 | Call/email/meeting events |
-| `raw_campaign_touches` | 22,889 | Treatment/control outreach |
-
-### Conversion signal structure
-
-Conversion is modeled as a logistic function of observable features:
-
-```
-logit = base
-      + LEAD_SOURCE_WEIGHT[lead_source]      # Referral +1.2 → Cold Call -0.8
-      + INDUSTRY_WEIGHT[industry]            # SaaS +0.6 → Education -0.5
-      + JOB_TITLE_WEIGHT[job_title]          # CEO +0.55 → Procurement -0.35
-      + REGION_WEIGHT[region]
-      + interaction(Referral × SaaS)         # high-intent × high-fit boost
-      + size_sweetspot(company_size)         # peak around 150 employees
-      - 0.15 × |total_activities - 7|        # engagement sweet spot
-      + CAMPAIGN_RESPONSE_WEIGHT[response]   # Replied +1.0 → Unsubscribed -1.0
-      + N(0, 0.25)                           # irreducible noise
-p_convert = sigmoid(logit)
-event_converted ~ Bernoulli(p_convert)
-```
-
-Result: **Referral leads convert at ~45%, Cold Call leads at ~9%** — a realistic 5x spread that a downstream ML model can actually learn from.
-
-### Deliberate messiness (for Silver cleaning practice)
-
-| Issue | Example | Handling in Silver |
-|---|---|---|
-| Missing values | `company_size = NULL` (~2%) | Stays NULL + `company_size_missing` flag |
-| Wrong data types | `company_size = "163 emp"` | Regex-parsed to integer |
-| Duplicate rows | Same `activity_id` twice | `drop_duplicates(subset="activity_id")` |
-| Orphan foreign keys | `lead_id = "L99999"` (nonexistent) | Routed to `activities_rejected` quarantine |
-| Outliers | `deal_value = 999999999` | Nulled + `deal_value_outlier` flag |
-
----
-
-## Pipeline Stages
-
-### 1. Bronze (raw ingestion)
-
-Raw CSVs are loaded verbatim into `raw_*` PostgreSQL tables. No cleaning, minimal type constraints (e.g. `company_size` is `VARCHAR` because some rows contain text). Idempotent: `TRUNCATE` before every load.
+## Installation
 
 ```bash
-python scripts/load_to_postgres.py
-```
+git clone <repository-url>
+cd CreditPulse
 
-### 2. Silver (cleaning)
-
-Cleaning rules applied from Bronze → Silver:
-
-- Nulls preserved (imputation is a modeling decision, not a cleaning decision)
-- Text fields regex-normalized
-- Duplicates dropped
-- Orphans quarantined (not silently deleted)
-- Outliers flagged
-
-```bash
-python scripts/clean_bronze_to_silver.py
-```
-
-**Verified output:**
-```
-leads_clean:              50,871 rows (1,017 with missing company_size)
-opportunities_clean:      30,401 rows (3 outliers flagged)
-activities_clean:        245,483 rows
-activities_rejected:       1,236 rows (orphan lead_id)
-campaign_touches_clean:   22,889 rows
-```
-
-### 3. Gold (star schema + business-ready table)
-
-Star schema:
-- `dim_time` — full calendar 2010–2026
-- `dim_leads` — one row per lead
-- `fact_activities`, `fact_opportunities`, `fact_campaign_touches` — event tables with FKs
-
-Plus `lead_summary` — one flattened row per lead with everything the ML/survival/CLV layers need:
-
-- Lead attributes (industry, company size, source, region, etc.)
-- `total_activities`, `first_activity_date`, `last_activity_date`
-- `received_campaign`, `treatment_group`, `campaign_response` (for causal analysis)
-- `has_opportunity`, `opportunity_stage`, `deal_value`, `deal_value_outlier`
-- **`event_converted`** — sourced from `leads_clean.status = 'Converted'` (NOT from opportunity stage — the lead's outcome is a property of the lead, not the deal)
-- **`duration_days`** — time-to-conversion for converted leads; time-to-snapshot for censored — ready for Cox Proportional Hazards
-
-```bash
-python scripts/run_sql_file.py sql/create_gold_tables.sql
-```
-
-### 4. Analytics & ML
-
-See the [Machine Learning](#machine-learning) section.
-
----
-
-## Machine Learning
-
-**Script:** `scripts/train_ml_models.py`
-
-### Workflow
-
-```
-lead_summary
-    → Feature Selection
-    → Train/Test Split (stratified 80/20)
-    → Preprocessing (impute → scale numeric; impute → one-hot categorical)
-    → Logistic Regression / Random Forest / XGBoost
-    → Model Comparison
-    → Best Model Selection (by AUC)
-    → Generate Probability
-    → Risk Tier (quantile-based)
-    → Expected Loss = (1 - probability) × deal_value
-```
-
-### Features used
-
-**Numeric:** `total_activities`, `company_size`, `received_campaign`  
-**Categorical:** `industry`, `lead_source`, `region`, `job_title`, `treatment_group`, `campaign_response`  
-**Target:** `event_converted` (binary)
-
-Deliberately excluded: `deal_value` (leaks the outcome — won deals are worth more), `duration_days` (leaks the timing of the outcome), `status`, `opportunity_stage`.
-
-### Model comparison (holdout set, N = 10,175)
-
-| Model | AUC | Accuracy | F1 | Precision | Recall |
-|---|---|---|---|---|---|
-| Logistic Regression | 0.7418 | 0.6614 | 0.4688 | 0.3571 | 0.6822 |
-| **Random Forest** | **0.7667** | **0.6948** | **0.4939** | **0.3878** | **0.6800** |
-| XGBoost | 0.7660 | 0.6904 | 0.4979 | 0.3861 | 0.7011 |
-
-**Selected:** Random Forest — highest AUC (0.7667), and RF/XGBoost are effectively tied at this dataset size.
-
-### Why AUC 0.77 is a defensible result
-
-- **Real B2B lead-scoring models typically land in 0.75–0.85 AUC.** 0.77 sits comfortably in the "production-viable" range.
-- The dataset has an intrinsic noise term (`σ = 0.25` on the logit) plus a Bernoulli sampling step, which caps the theoretical AUC ceiling at roughly 0.85. No model can beat the noise in its own training data.
-- The calibration plot shows the model's probabilities are honest: a lead scored at 80% converts at ~84% of the time. The model outputs **usable probabilities**, not just a ranking score.
-
-### Risk tier methodology
-
-**Quantile-based thresholds**, not fixed cutoffs:
-
-- **Low risk** — top 20% of conversion probability
-- **Medium risk** — middle 60%
-- **High risk** — bottom 20%
-
-Rationale: fixed thresholds (`>= 0.70 → Low`) assume you know *a priori* where "good" and "bad" sit on the probability scale. That's almost never true — the distribution shifts with the model and the data. Quantile tiers adapt automatically, guaranteeing a stable 20/60/20 split. This mirrors how production credit-risk, fraud, and lead-scoring systems label their populations.
-
-Current thresholds are stored in `models/model_metadata.json` under `risk_tier_thresholds`, so the exact definition of "High risk" is reproducible for this batch.
-
-### Expected Loss
-
-`expected_loss = (1 - p_convert) × deal_value`
-
-This converts model probability into a dollar figure, bridging ML output and business decision-making. It's what lets a RevOps manager say: *"These 20 high-risk leads represent $X of expected revenue at risk — here's where we should focus retention effort."*
-
----
-
-## Dashboard
-
-**App:** `app.py` (Streamlit + Plotly)
-
-### Pages
-
-| Page | What it shows |
-|---|---|
-| 🏠 **Overview** | Top KPIs, portfolio trend, risk distribution, key insights |
-| 👥 **Customer Analytics** | Search, funnel chart, customer 360 drill-down |
-| ⚗️ **Risk Analysis** | Proxy risk scoring, tier breakdown, top high-risk customers |
-| 🧪 **Interventions** | Treatment vs. control uplift, response breakdown |
-| 🧠 **ML Models** | Model comparison, scored leads, calibration, probability distribution |
-| 🗄️ **Data & ETL** | Pipeline row counts, data-quality checks, runbook |
-| 📊 **Dashboard** | End-to-end executive view |
-| ⚙️ **Settings** | — |
-
-### ML Models page (the newest)
-
-Reads from `models/model_metadata.json` and the `ml_lead_scores` table. Shows:
-
-- Real AUC / Accuracy / F1 / Precision / Recall from the last training run
-- Model comparison table + grouped bar chart
-- Per-lead scored table with risk tier, probability, expected loss
-- Risk tier donut (20/60/20 split)
-- Calibration chart — predicted probability vs. actual conversion
-
----
-
-## Infrastructure Notes
-
-### Postgres 18.6 on Windows
-
-**Data directory is `D:\pgdata`, not the default `C:\Program Files\PostgreSQL\18\data`.**
-
-This was a deliberate choice after a production-style incident:
-
-- The pipeline had been writing ~250 MB per run to C:
-- C: filled to 0.42 GB free
-- Postgres crashed mid-transaction with `No space left on device`
-- The Windows Service Control Manager wrapped the crash, so subsequent startups reported "Failed to start" without revealing the real error
-- The data directory was migrated to D: (94 GB free)
-- The Windows service wrapper (`pg_ctl.exe runservice`) has a bug in PostgreSQL 18 that mangles backslashes in `-D` arguments when registered post-installation
-- **Resolution:** Clean reinstall of PostgreSQL 18.6 via the EDB Windows installer, pointing the data directory at `D:\pgdata` from the start
-
-### Disk-space guard
-
-`load_to_postgres.py` and `clean_bronze_to_silver.py` include a guard that aborts if C: has less than 3 GB free, preventing the crash from recurring:
-
-```python
-import shutil
-_free_gb = shutil.disk_usage("C:\\").free / (1024 ** 3)
-if _free_gb < 3:
-    raise SystemExit(f"Only {_free_gb:.2f} GB free on C:. Aborting.")
-```
-
-### Idempotency
-
-Every pipeline stage is safe to re-run:
-
-- `load_to_postgres.py` — truncates Bronze tables first
-- `clean_bronze_to_silver.py` — truncates Silver tables first
-- `run_sql_file.py` — drops Gold tables with CASCADE before running the target SQL file
-- `train_ml_models.py` — truncates `ml_lead_scores` before writing
-
----
-
-## Setup & Running Locally
-
-### Prerequisites
-
-- Python 3.11+
-- PostgreSQL 18+ (installed and running)
-- Git
-
-### Installation
-
-```bash
-# Clone
-git clone <repo-url>
-cd "Credit Risk"
-
-# Create virtual environment
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+```
 
-# Install dependencies
+### Windows
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Install dependencies:
+
+```bash
 pip install -r requirements.txt
 ```
 
-### Configure
+---
 
-Create `.env` at the project root:
+## Configure Database
+
+Create a `.env` file:
 
 ```env
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=creditrisk
+DB_NAME=creditpulse
 DB_USER=postgres
-DB_PASSWORD=12345
-DATABASE_URL=postgresql+psycopg2://postgres:12345@localhost:5432/creditrisk
+DB_PASSWORD=your_password
+
+DATABASE_URL=postgresql+psycopg2://postgres:your_password@localhost:5432/creditpulse
 ```
 
-Create the database (once):
+Create the PostgreSQL database:
 
-```powershell
-$env:PGPASSWORD = "12345"
-& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -h localhost -c "CREATE DATABASE creditrisk;"
-Remove-Item Env:\PGPASSWORD
+```sql
+CREATE DATABASE creditpulse;
 ```
 
-### Run the full pipeline
+---
 
-```powershell
-# 1. Generate synthetic raw data
+# Run the Pipeline
+
+### 1. Generate synthetic data
+
+```bash
 python scripts/generate_synthetic_data.py
+```
 
-# 2. Create Bronze tables + load CSVs
+### 2. Create and load Bronze
+
+```bash
 python scripts/run_sql_file.py sql/create_bronze_tables.sql
 python scripts/load_to_postgres.py
+```
 
-# 3. Create Silver tables + clean
+### 3. Create and populate Silver
+
+```bash
 python scripts/run_sql_file.py sql/create_silver_tables.sql
 python scripts/clean_bronze_to_silver.py
+```
 
-# 4. Create Gold tables
+### 4. Build Gold
+
+```bash
 python scripts/run_sql_file.py sql/create_gold_tables.sql
+```
 
-# 5. Train ML model
+### 5. Train lead-scoring models
+
+```bash
 python scripts/train_ml_models.py
+```
 
-# 6. Launch dashboard
+### 6. Run survival analysis
+
+```bash
+python scripts/create_survival_view.py
+python scripts/survival_analysis.py
+```
+
+### 7. Calculate CLV
+
+```bash
+python scripts/clv_modeling.py
+```
+
+### 8. Launch dashboard
+
+```bash
 streamlit run app.py
 ```
 
-Dashboard opens at `http://localhost:8501`.
+The dashboard will be available at:
+
+```text
+http://localhost:8501
+```
 
 ---
 
-## Key Design Decisions
+# Engineering Decisions
 
-**1. Fixed snapshot date, not "today"**  
-The generator uses `AS_OF_DATE = 2026-09-06` rather than `pd.Timestamp.today()`. Reproducibility — the dataset is a stable artifact, not something that changes between sessions.
+## 1. Reproducible snapshot date
 
-**2. Nulls preserved at Silver, not imputed**  
-Imputation is a modeling decision, not a cleaning decision. If you impute `company_size` at Silver, you can't undo it if the model would prefer a different strategy. Nulls stay null until they reach the preprocessing pipeline.
+The synthetic dataset uses a fixed snapshot date rather than the current system date.
 
-**3. Orphans quarantined, not dropped**  
-Bad rows go into `activities_rejected` with a `rejection_reason`. This mirrors how production data-quality incidents are investigated — the audit trail matters.
-
-**4. `event_converted` sourced from `leads_clean.status`, not `fact_opportunities.stage`**  
-The lead's outcome and the deal's outcome are different things. A lead can convert without ever becoming an opportunity. Sourcing the target from the opportunity stage silently relabels ~40% of true conversions as failures.
-
-**5. Quantile-based risk tiers**  
-Fixed thresholds don't adapt to model or data drift. Quantile tiers always produce a usable 20/60/20 split, and the thresholds are saved to `model_metadata.json` for reproducibility.
-
-**6. Idempotent loads**  
-Every load script truncates its own target before writing. Partial failures are recoverable by re-running.
-
-**7. Explicit feature exclusion**  
-`deal_value`, `duration_days`, `status`, and `opportunity_stage` are deliberately excluded from ML features — all leak the target by construction.
+This ensures that the dataset and model results remain reproducible.
 
 ---
 
-## Project Status
+## 2. Nulls are preserved during cleaning
 
-| Phase | Status |
-|---|---|
-| 1. Setup & Synthetic Data | ✅ Complete |
-| 2. ETL Pipeline (manual) | ✅ Complete |
-| 3. Bronze → Silver → Gold (Medallion) | ✅ Complete |
-| 4. Data Quality & Incremental Loads | 🔶 Manual checks done; formal Great Expectations deferred |
-| 5. Airflow Orchestration | ⬜ Not started |
-| **6. ML — Lead Scoring** | ✅ **Complete — Random Forest, AUC 0.77** |
-| 7. Survival Analysis (time-to-conversion) | ⬜ Ready to start (Gold layer has `event_converted` / `duration_days`) |
-| 8. CLV Calculation & Risk Integration | ⬜ Ready to start (Gold layer has `deal_value`) |
-| 9. Intervention Experiment (Causal / Uplift) | ⬜ Ready to start (Gold layer has `treatment_group` / `campaign_response`) |
-| 10. Dashboard Polish & Drill-throughs | 🔶 MVP shipped; `use_container_width` deprecations pending |
-| 11. Deployment & Documentation | 🔶 In progress (this README) |
+Missing values are not automatically imputed in the Silver layer.
+
+Imputation is treated as a **modeling decision**, allowing different downstream models to use different strategies.
 
 ---
 
-## What's Next
+## 3. Invalid records are quarantined
 
-The next natural step is **Phase 7 — Survival Analysis**. The Gold layer already carries `event_converted` and `duration_days` (with right-censoring at the fixed snapshot date), so a Cox Proportional Hazards model can be trained without further data engineering. This will answer a different question from ML lead scoring: not *"will this lead convert?"* but *"how long until this lead converts?"* — which is what allows a RevOps team to plan outreach capacity and pipeline timing.
+Orphan records are moved into rejection tables with a reason instead of being silently deleted.
 
-After that: CLV calculation (Phase 8), causal uplift modeling on campaign data (Phase 9), and Airflow orchestration for the full pipeline (Phase 5).
+This maintains an audit trail.
+
+---
+
+## 4. Conversion is a lead-level outcome
+
+`event_converted` is sourced from the lead's status rather than opportunity stage.
+
+A lead can convert without necessarily becoming an opportunity, so using opportunity stage as the target would incorrectly classify some conversions.
+
+---
+
+## 5. Avoiding ML leakage
+
+Fields such as:
+
+```text
+deal_value
+duration_days
+status
+opportunity_stage
+```
+
+are excluded from the lead-scoring model because they contain information about the outcome.
+
+---
+
+## 6. Quantile-based segmentation
+
+Lead priority and CLV tiers use quantiles rather than arbitrary fixed thresholds.
+
+This makes segmentation more robust to changes in score distributions.
+
+---
+
+## 7. Idempotent pipeline
+
+Each major pipeline stage can be safely re-run.
+
+Target tables are cleared before new outputs are written, allowing failures to be recovered without manually cleaning partial results.
+
+---
+
+# Infrastructure Lesson
+
+During development, PostgreSQL was running on Windows with its data directory configured on `D:\pgdata`.
+
+A pipeline run generated enough temporary/database data to severely reduce free space on the system drive, eventually causing PostgreSQL to fail with:
+
+```text
+No space left on device
+```
+
+The issue led to:
+
+* Moving PostgreSQL data to a dedicated drive
+* Reinstalling PostgreSQL with the correct data directory
+* Adding disk-space checks to pipeline scripts
+* Improving failure diagnostics
+
+A disk-space guard now prevents the pipeline from running when insufficient system storage is available.
+
+This was an important engineering lesson: **data pipelines need operational safeguards, not just correct transformations.**
+
+---
+
+# Current Project Status
+
+| Phase                                   | Status          |
+| --------------------------------------- | --------------- |
+| Synthetic Data Generation               | ✅ Complete      |
+| Bronze / Silver / Gold ETL              | ✅ Complete      |
+| Data Quality Handling                   | ✅ Complete      |
+| Lead Scoring                            | ✅ Complete      |
+| Random Forest — AUC 0.77                | ✅ Complete      |
+| Survival Analysis — C-index 0.675       | ✅ Complete      |
+| Survival-adjusted CLV — $170M portfolio | ✅ Complete      |
+| Streamlit Dashboard                     | 🔶 MVP Complete |
+| Uplift Modeling                         | ⬜ Next          |
+| Airflow Orchestration                   | ⬜ Planned       |
+| Dashboard Polish                        | 🔶 Ongoing      |
+| Deployment                              | ⬜ Planned       |
+
+---
+
+# Roadmap
+
+### Phase 9 — Uplift Modeling
+
+* T-Learner / X-Learner
+* Individual treatment effect
+* Uplift segmentation
+* Qini curve
+* Incremental conversion analysis
+* Streamlit uplift dashboard
+
+### Phase 10 — Pipeline Orchestration
+
+* Apache Airflow
+* DAG-based ETL
+* Dependency management
+* Pipeline monitoring
+* Automated model execution
+
+### Phase 11 — Deployment
+
+* Production-style deployment
+* Environment configuration
+* Documentation
+* Reproducible setup
+* Dashboard deployment
+
+---
+
+# Key Takeaway
+
+CreditPulse demonstrates an end-to-end analytics workflow rather than a standalone ML model.
+
+```text
+DATA
+  ↓
+ENGINEERING
+  ↓
+QUALITY
+  ↓
+WAREHOUSE
+  ↓
+PREDICTION
+  ↓
+TIME-TO-EVENT
+  ↓
+CUSTOMER VALUE
+  ↓
+INTERVENTION
+  ↓
+BUSINESS DECISION
+```
+
+The project is designed to demonstrate the intersection of:
+
+**Marketing Analytics × Revenue Operations × Data Engineering × Machine Learning × Statistics × Customer Value**
 
 ---
 
 ## Acknowledgements
 
-Synthetic data generated with [Faker](https://faker.readthedocs.io/) — multi-locale, 60+ countries. ML pipeline built on [scikit-learn](https://scikit-learn.org/) and [XGBoost](https://xgboost.readthedocs.io/). Dashboard built on [Streamlit](https://streamlit.io/) and [Plotly](https://plotly.com/python/).
+CreditPulse uses:
+
+* Faker for synthetic data generation
+* Pandas / NumPy / SciPy for data processing
+* Scikit-learn / XGBoost for machine learning
+* Lifelines for survival analysis
+* PostgreSQL for data storage
+* Streamlit / Plotly for visualization
 
 ---
 
-*Last updated: 2026-09-14*
-```
+*CreditPulse is a portfolio project using entirely synthetic data.*
 
----
-
-### Notes on what I included and why
-
-**What's emphasized:**
-- The synthetic data origin is stated upfront and clearly, twice. A recruiter who clicks in should never be confused about whether this is real customer data.
-- The **signal structure is documented in the README itself** — the reader can see how the logistic weights are set and why AUC ~0.77 is the realistic ceiling. That's a big credibility signal: you understand that AUC is a property of the data, not just the model.
-- The **infrastructure incident is documented as a learning**, not hidden. Real engineering teams do post-mortems. Doing one shows maturity.
-- The **machine learning section includes "Why AUC 0.77 is defensible"** — this preempts the "why not 0.95?" question.
-- The **key design decisions section** is the strongest part for interviews. Each bullet is a conversation starter that shows engineering judgment.
-
-**What I avoided:**
-- Overclaiming — no "production-grade" language, no "0.86 AUC" from the placeholder dashboard
-- Hiding the crash — the infrastructure notes make it clear that a real incident happened and was resolved
-- Jargon walls — every technical term is used in context
-
-**One thing to fill in before pushing:** replace `<repo-url>` with your actual GitHub URL. Also consider adding a screenshot of the ML Models page (with the 20/60/20 donut) near the top — that's the best single visual for the project.
-
-**If you want, I can also write:**
-- The `requirements.txt` (I noticed it wasn't in the file listing — you may have it, but I can regenerate)
-- A short `CONTRIBUTING.md` or `SETUP.md` — though the README is already comprehensive enough that it's probably unnecessary
-- A one-page memo in the style of what a RevOps lead would receive — matching what your original project doc promised
-
-
-#   C r e d i t - R i s k  
- 
+*Last updated: September 2026*

@@ -78,7 +78,7 @@ df["created_date"] = pd.to_datetime(df["created_date"])
 
 
 # ---------------------------------------------------------------------------
-# Customer Analytics helpers: funnel chart + customer drill-down
+# Customer Analytics helpers
 # ---------------------------------------------------------------------------
 
 STAGE_ORDER = ["New", "Contacted", "Qualified", "Converted"]
@@ -982,7 +982,6 @@ def render_clv_page():
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Key finding callout — uses HTML to avoid LaTeX interpretation of "$"
     if not by_ind.empty and not by_src.empty:
         best_ind = by_ind.iloc[0]
         best_src = by_src.iloc[0]
@@ -1004,6 +1003,246 @@ def render_clv_page():
             """,
             unsafe_allow_html=True,
         )
+
+
+# ---------------------------------------------------------------------------
+# Uplift Modeling page (Phase 9)
+# ---------------------------------------------------------------------------
+
+@st.cache_data(ttl=300)
+def load_uplift_summary():
+    if not os.path.exists("models/uplift_summary.json"):
+        return None
+    with open("models/uplift_summary.json") as f:
+        return json.load(f)
+
+
+@st.cache_data(ttl=300)
+def load_uplift_predictions():
+    engine = create_engine(os.getenv("DATABASE_URL"))
+    try:
+        return pd.read_sql("""
+            SELECT u.lead_id, u.treatment_group, u.event_converted,
+                   u.p_treatment, u.p_control, u.uplift, u.uplift_segment,
+                   u.industry, u.lead_source, u.region,
+                   l.deal_value
+            FROM ml_uplift_predictions u
+            LEFT JOIN lead_summary l ON l.lead_id = u.lead_id
+        """, engine)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _compute_qini_curve(df, n_bins=25):
+    df = df.copy().sort_values("uplift", ascending=False)
+    treat = df[df["treatment_group"] == "Treatment"]
+    ctrl = df[df["treatment_group"] == "Control"]
+    n = len(df)
+    fracs = np.linspace(0.05, 1.0, n_bins)
+    treat_ratio = len(treat) / len(ctrl) if len(ctrl) else 1.0
+    qini_points = []
+    for f in fracs:
+        k = int(f * n)
+        top_k = df.iloc[:k]
+        y_t = top_k[top_k["treatment_group"] == "Treatment"]["event_converted"].sum()
+        y_c = top_k[top_k["treatment_group"] == "Control"]["event_converted"].sum()
+        qini = y_t - y_c * treat_ratio
+        qini_points.append({"fraction": f, "qini": qini, "n": k})
+    return pd.DataFrame(qini_points)
+
+
+def render_uplift_page():
+    st.markdown('<div class="top-title">Uplift Modeling</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="description">Not just "does the campaign work?" but '
+        '"<em>which leads</em> does the campaign actually change?" '
+        'T-learner uplift model on campaign-targeted leads.</div>',
+        unsafe_allow_html=True,
+    )
+
+    summary = load_uplift_summary()
+    if summary is None:
+        st.warning("No uplift model found. Run `python scripts/uplift_modeling.py` first.")
+        return
+
+    agg = summary.get("aggregate", {})
+    seg_counts = summary.get("segment_counts", {})
+    arm_metrics = summary.get("arm_metrics", {})
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Mean uplift", f"{agg.get('mean_uplift', 0):+.2%}")
+    c2.metric("Median uplift", f"{agg.get('median_uplift', 0):+.2%}")
+    c3.metric("Persuadable leads",
+              f"{seg_counts.get('Persuadable', 0):,} "
+              f"({agg.get('share_persuadable', 0):.1%})")
+    c4.metric("Do Not Disturb leads",
+              f"{seg_counts.get('Do Not Disturb', 0):,} "
+              f"({agg.get('share_do_not_disturb', 0):.1%})")
+
+    st.success(
+        f"T-learner arms both at ~{arm_metrics.get('treatment_auc', 0):.2f} AUC. "
+        f"Mean uplift of {agg.get('mean_uplift', 0):+.2%} matches the raw "
+        f"Treatment minus Control conversion difference."
+    )
+
+    df = load_uplift_predictions()
+    if df.empty:
+        st.info("No rows in `ml_uplift_predictions` yet.")
+        return
+
+    color_map = {
+        "Persuadable": "#1eb27b",
+        "Sure Thing": "#3478df",
+        "Lost Cause": "#94a3b8",
+        "Do Not Disturb": "#ef5350",
+    }
+
+    left, right = st.columns([1, 1.4])
+    with left:
+        st.markdown('<div class="panel-title">Segment Breakdown</div>', unsafe_allow_html=True)
+        seg_df = pd.DataFrame({
+            "segment": ["Persuadable", "Sure Thing", "Lost Cause", "Do Not Disturb"],
+            "count": [seg_counts.get(s, 0) for s in
+                      ["Persuadable", "Sure Thing", "Lost Cause", "Do Not Disturb"]],
+        })
+        fig = px.pie(seg_df, names="segment", values="count", hole=0.6,
+                     color="segment", color_discrete_map=color_map)
+        fig.update_layout(height=340, margin=dict(l=5, r=5, t=10, b=5), legend_title_text="")
+        st.plotly_chart(fig, use_container_width=True)
+
+    with right:
+        st.markdown('<div class="panel-title">Uplift Distribution</div>', unsafe_allow_html=True)
+        fig = px.histogram(df, x="uplift", nbins=60, color="uplift_segment",
+                           color_discrete_map=color_map)
+        fig.add_vline(x=0, line_dash="dash", line_color="#666")
+        fig.update_layout(
+            height=340, margin=dict(l=5, r=5, t=10, b=5),
+            plot_bgcolor="white", paper_bgcolor="white",
+            xaxis_title="Predicted uplift (P_treatment − P_control)",
+            yaxis_title="Leads", legend_title_text="",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown('<div class="panel"><div class="panel-title">'
+                'Qini Curve — How Well the Model Ranks Uplift</div>',
+                unsafe_allow_html=True)
+    st.caption(
+        "The Qini curve shows cumulative incremental conversions as we "
+        "target leads in predicted-uplift order. A model that ranks correctly "
+        "produces a curve above the diagonal."
+    )
+    qini_df = _compute_qini_curve(df, n_bins=25)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=qini_df["fraction"], y=qini_df["qini"],
+        mode="lines+markers", name="Model",
+        line=dict(color="#1eb27b", width=3),
+    ))
+    max_q = qini_df["qini"].iloc[-1]
+    fig.add_trace(go.Scatter(
+        x=[0, 1], y=[0, max_q],
+        mode="lines", name="Random targeting",
+        line=dict(color="#94a3b8", dash="dash"),
+    ))
+    fig.update_layout(
+        height=400, margin=dict(l=5, r=5, t=10, b=5),
+        plot_bgcolor="white", paper_bgcolor="white",
+        xaxis_title="Fraction of population targeted (ranked by predicted uplift)",
+        yaxis_title="Cumulative incremental conversions",
+        legend=dict(orientation="h", y=1.1),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown('<div class="panel"><div class="panel-title">'
+                'Uplift and Baseline by Segment</div>', unsafe_allow_html=True)
+    seg_stats = df.groupby("uplift_segment", as_index=False).agg(
+        n=("lead_id", "count"),
+        mean_uplift=("uplift", "mean"),
+        mean_p_treatment=("p_treatment", "mean"),
+        mean_p_control=("p_control", "mean"),
+    ).sort_values("mean_uplift", ascending=False)
+    st.dataframe(
+        seg_stats.style.format({
+            "n": "{:,}",
+            "mean_uplift": "{:+.2%}",
+            "mean_p_treatment": "{:.1%}",
+            "mean_p_control": "{:.1%}",
+        }),
+        hide_index=True, use_container_width=True,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown('<div class="panel"><div class="panel-title">'
+                'Top 25 Persuadable Leads — Target These</div>',
+                unsafe_allow_html=True)
+    st.caption(
+        "Leads with the highest predicted uplift. Running the campaign on "
+        "these leads produces the largest expected incremental conversions."
+    )
+    top_pers = (df[df["uplift_segment"] == "Persuadable"]
+                .sort_values("uplift", ascending=False).head(25))
+    st.dataframe(
+        top_pers[["lead_id", "industry", "lead_source", "region",
+                  "deal_value", "p_control", "p_treatment",
+                  "uplift", "event_converted"]]
+        .style.format({
+            "deal_value": "${:,.0f}",
+            "p_control": "{:.1%}",
+            "p_treatment": "{:.1%}",
+            "uplift": "{:+.2%}",
+        }),
+        hide_index=True, use_container_width=True, height=460,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown('<div class="panel"><div class="panel-title">'
+                'Top 15 Do Not Disturb Leads — Suppress These</div>',
+                unsafe_allow_html=True)
+    st.caption(
+        "Leads where the campaign reduces conversion probability. "
+        "Suppressing the campaign for these leads saves budget AND improves "
+        "their expected outcome. A/B testing alone cannot identify this segment."
+    )
+    top_dnd = (df[df["uplift_segment"] == "Do Not Disturb"]
+               .sort_values("uplift", ascending=True).head(15))
+    st.dataframe(
+        top_dnd[["lead_id", "industry", "lead_source", "region",
+                 "deal_value", "p_control", "p_treatment",
+                 "uplift", "event_converted"]]
+        .style.format({
+            "deal_value": "${:,.0f}",
+            "p_control": "{:.1%}",
+            "p_treatment": "{:.1%}",
+            "uplift": "{:+.2%}",
+        }),
+        hide_index=True, use_container_width=True, height=340,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    n_pers = seg_counts.get("Persuadable", 0)
+    n_dnd = seg_counts.get("Do Not Disturb", 0)
+    n_sure = seg_counts.get("Sure Thing", 0)
+    n_lost = seg_counts.get("Lost Cause", 0)
+    st.markdown(
+        f"""
+        <div class="panel" style="background: #ecfdf5; border-color: #1eb27b;">
+            <div class="panel-title">Business Takeaway</div>
+            <p style="color: #065f46; margin-top: 6px;">
+                Of {len(df):,} campaign-targeted leads:<br>
+                <b>• {n_pers:,} are Persuadable</b> — the campaign materially
+                increases their conversion. Target these first.<br>
+                <b>• {n_dnd:,} are Do Not Disturb</b> — the campaign
+                <b>lowers</b> their conversion. Suppressing them saves budget
+                and improves outcomes.<br>
+                <b>• {n_sure:,} are Sure Things</b> — they'd convert anyway,
+                so campaign spend on them is wasted.<br>
+                <b>• {n_lost:,} are Lost Causes</b> — no campaign will help.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1277,6 +1516,7 @@ with st.sidebar:
             "🧠  ML Models",
             "📈  Survival Analysis",
             "💎  CLV",
+            "🎯  Uplift",
             "🗄️  Data & ETL",
             "📊  Dashboard",
             "⚙️  Settings"
@@ -1310,6 +1550,10 @@ if page == "📈  Survival Analysis":
 
 if page == "💎  CLV":
     render_clv_page()
+    st.stop()
+
+if page == "🎯  Uplift":
+    render_uplift_page()
     st.stop()
 
 if page == "🗄️  Data & ETL":
