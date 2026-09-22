@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import pandas as pd
 import numpy as np
@@ -63,25 +63,29 @@ def get_db_url():
       1. Streamlit Cloud secrets (st.secrets["DATABASE_URL"])
       2. Local .env file (os.getenv("DATABASE_URL"))
 
-    This lets the same app run locally and on Streamlit Community Cloud
-    without code changes.
+    Wrapped in a broad try/except because st.secrets may not be fully
+    available during the very first render on Streamlit Cloud.
     """
-    # Try Streamlit secrets first (cloud deployment)
+    # Try Streamlit secrets first
     try:
         if "DATABASE_URL" in st.secrets:
             return st.secrets["DATABASE_URL"]
-    except (FileNotFoundError, KeyError):
+    except Exception:
         pass
 
-    # Fall back to .env (local development)
+    # Fall back to environment variable
     url = os.getenv("DATABASE_URL")
-    if not url:
-        st.error(
-            "DATABASE_URL not found. Locally: set it in .env. "
-            "On Streamlit Cloud: set it in the app's Secrets settings."
-        )
-        st.stop()
-    return url
+    if url:
+        return url
+
+    # Nothing worked — show a clear diagnostic
+    st.error(
+        "Could not find DATABASE_URL. On Streamlit Cloud, set it under "
+        "App Settings → Secrets as:\n\n"
+        'DATABASE_URL = "postgresql+psycopg2://..."\n\n'
+        "Locally, ensure .env contains DATABASE_URL."
+    )
+    st.stop()
 
 
 @st.cache_data(ttl=300)
@@ -1788,4 +1792,3 @@ with insights_col:
     a2.button("View Full Dashboard", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    
