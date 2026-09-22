@@ -1,986 +1,1115 @@
 # CreditPulse — End-to-End Credit Risk & Customer Value Analytics Platform
 
-> A portfolio-grade analytics engineering project that transforms synthetic CRM data into actionable lead scoring, survival analysis, customer lifetime value, and causal uplift insights.
+> **A production-style analytics platform combining credit risk, customer value, survival analysis, and causal intervention modeling — built to demonstrate the bridge between Finance Analytics and Marketing / RevOps.**
 
-CreditPulse was originally designed as a **credit-risk analytics platform** and has been intentionally adapted into a **Marketing / RevOps Analytics Engineering** project.
+CreditPulse is an end-to-end analytics platform built on **synthetic customer and credit data**.
 
-The project demonstrates an end-to-end workflow:
+The project takes a traditional credit-risk problem and extends it into a broader customer analytics system:
 
-**Synthetic CRM Data → PostgreSQL → Medallion ETL → ML Lead Scoring → Survival Analysis → CLV → Uplift Modeling → Streamlit Dashboard**
+**Who is likely to convert? → When will they convert? → How valuable are they? → Will an intervention actually change their behavior?**
+
+The result is a complete analytical pipeline covering data engineering, machine learning, survival analysis, customer lifetime value, causal/uplift modeling, orchestration, and executive dashboards.
 
 ---
 
 ## Table of Contents
 
-1. [Project Overview](#project-overview)
-2. [Business Problem](#business-problem)
-3. [Credit Risk → Marketing / RevOps Mapping](#credit-risk--marketing--revops-mapping)
-4. [Synthetic Data](#synthetic-data)
-5. [Architecture](#architecture)
-6. [Data Model](#data-model)
-7. [Data Quality & ETL](#data-quality--etl)
-8. [ML Lead Scoring](#ml-lead-scoring)
+1. [Business Problem](#business-problem)
+2. [Credit Risk → Marketing / RevOps Mapping](#credit-risk--marketing--revops-mapping)
+3. [Synthetic Dataset](#synthetic-dataset)
+4. [Architecture](#architecture)
+5. [Data Model](#data-model)
+6. [ETL & Data Quality](#etl--data-quality)
+7. [ML Lead Scoring](#ml-lead-scoring)
+8. [Survival Analysis](#survival-analysis)
 9. [Customer Lifetime Value](#customer-lifetime-value)
 10. [Uplift Modeling](#uplift-modeling)
-11. [Dashboard](#dashboard)
-12. [Infrastructure Notes](#infrastructure-notes)
-13. [Setup & Running Locally](#setup--running-locally)
-14. [Key Design Decisions](#key-design-decisions)
-15. [Project Status](#project-status)
-
----
-
-## Project Overview
-
-CreditPulse is an end-to-end analytics platform built to demonstrate how CRM and marketing data can be transformed into predictive and decision-oriented analytics.
-
-The project covers:
-
-* Synthetic CRM data generation
-* PostgreSQL data warehousing
-* Bronze → Silver → Gold medallion architecture
-* Data cleaning and deduplication
-* Lead conversion prediction
-* Survival / time-to-conversion analysis
-* Customer lifetime value estimation
-* Causal uplift modeling
-* Executive analytics through Streamlit
-* Reproducible local infrastructure
-
-The project is intentionally designed around **business questions**, rather than simply demonstrating individual machine-learning algorithms.
+11. [Pipeline Orchestration](#pipeline-orchestration)
+12. [Dashboard](#dashboard)
+13. [Infrastructure Notes](#infrastructure-notes)
+14. [Setup & Running Locally](#setup--running-locally)
+15. [Key Design Decisions](#key-design-decisions)
+16. [Project Status](#project-status)
 
 ---
 
 ## Business Problem
 
-A CRM team does not only need to know:
+Traditional credit-risk systems answer questions such as:
 
-> **"Which leads are likely to convert?"**
+* Which customers are likely to default?
+* What is their estimated risk?
+* How long until an event occurs?
 
-It also needs to understand:
+CreditPulse extends the same analytical thinking into customer and marketing analytics.
 
-1. **Will the lead convert?**
-2. **When is the lead likely to convert?**
-3. **How valuable is the lead?**
-4. **Will a campaign actually cause the lead to convert?**
+Instead of stopping at risk prediction, the platform asks:
 
-CreditPulse answers these questions through four complementary analytics layers:
+1. **Which leads are likely to convert?**
+2. **When are they likely to convert?**
+3. **What is their expected customer lifetime value?**
+4. **Which customers should receive an intervention?**
+5. **Who should *not* receive the intervention because it may have little benefit or even a negative effect?**
 
-| Phase   | Business Question                   | Technique         |
-| ------- | ----------------------------------- | ----------------- |
-| Phase 6 | Will this lead convert?             | Classification    |
-| Phase 7 | When will this lead convert?        | Survival Analysis |
-| Phase 8 | What is this lead worth?            | CLV               |
-| Phase 9 | Will the campaign cause conversion? | Uplift Modeling   |
+This creates a bridge between:
 
----
-
-## Credit Risk → Marketing / RevOps Mapping
-
-The original analytical concepts were mapped into a CRM and marketing context.
-
-| Original Credit Concept        | CreditPulse Marketing / RevOps Equivalent |
-| ------------------------------ | ----------------------------------------- |
-| Customer default risk          | Lead conversion probability               |
-| Survival time-to-default       | Time-to-conversion                        |
-| Credit risk + CLV              | Lead score + CLV                          |
-| Loan offer intervention        | Campaign intervention                     |
-| Treatment / control experiment | Campaign A/B test                         |
-| Credit risk memo               | RevOps / Marketing decision support       |
-| Risk tiers                     | Lead priority tiers                       |
-
-This makes the project relevant to **Marketing Analytics, RevOps, CRM Analytics, Customer Analytics, and Marketing-Finance Analytics** roles.
+**Finance Analytics → Customer Analytics → Marketing Analytics → RevOps Decisioning**
 
 ---
 
-## Synthetic Data
+# Credit Risk → Marketing / RevOps Mapping
 
-The project uses **synthetic CRM data** generated using:
+The project deliberately maps financial-risk concepts to customer and revenue problems.
 
-* Faker
-* NumPy
-* Pandas
+| Finance / Credit Concept | CreditPulse Equivalent             |
+| ------------------------ | ---------------------------------- |
+| Default probability      | Conversion probability             |
+| Risk score               | Lead score                         |
+| Time-to-default          | Time-to-conversion                 |
+| Survival probability     | Customer/lead survival probability |
+| Expected loss            | Expected customer value            |
+| Portfolio value          | Customer lifetime value            |
+| Risk intervention        | Marketing intervention             |
+| Treatment effect         | Campaign uplift                    |
+| Risk segmentation        | Customer segmentation              |
 
-The generator creates realistic relationships between:
+This allows the project to demonstrate both **financial analytics reasoning** and **customer/revenue analytics engineering**.
 
-* Lead source
+---
+
+# Synthetic Dataset
+
+CreditPulse uses synthetic data so the complete pipeline can be reproduced without exposing real customer information.
+
+The dataset contains:
+
+* Customer / lead information
+* Company attributes
 * Industry
 * Region
+* Lead source
 * Job title
-* Seniority
-* Company size
-* Campaign exposure
+* Customer activity
+* Conversion outcomes
+* Treatment assignment
 * Campaign response
-* Activities
-* Opportunities
-* Deal value
-* Conversion status
+* Revenue-related variables
+* Time-to-event information
 
-The synthetic dataset intentionally contains both signal and noise so that the downstream models behave more like a real-world analytics problem.
+The final dataset contains approximately **50K+ lead records**.
 
-### Dataset Size
+The synthetic dataset is intentionally designed to contain realistic relationships between:
 
-| Dataset          | Records |
-| ---------------- | ------: |
-| Leads            |  50,871 |
-| Opportunities    |  30,401 |
-| Activities       | 249,186 |
-| Campaign touches |  22,889 |
-
-> **Important:** All business data in this project is synthetic and does not represent real customers or companies.
+* Customer behavior
+* Conversion probability
+* Time-to-conversion
+* Customer value
+* Intervention response
 
 ---
 
-## Architecture
+# Architecture
 
-CreditPulse follows a **Bronze → Silver → Gold medallion architecture**.
+CreditPulse follows a **Medallion Architecture**:
 
 ```text
                     ┌──────────────────────┐
-                    │  Synthetic CRM Data  │
+                    │   Synthetic Data     │
                     └──────────┬───────────┘
                                │
                                ▼
                     ┌──────────────────────┐
-                    │      BRONZE          │
-                    │      Raw Data        │
+                    │   Bronze Layer       │
+                    │   Raw PostgreSQL     │
                     └──────────┬───────────┘
                                │
                                ▼
                     ┌──────────────────────┐
-                    │      SILVER          │
-                    │ Cleaned / Validated  │
-                    │ Deduplicated Data    │
+                    │   Silver Layer      │
+                    │ Cleaning & Validation │
                     └──────────┬───────────┘
                                │
                                ▼
                     ┌──────────────────────┐
-                    │       GOLD           │
-                    │ Business-Ready Data │
-                    │ Star Schema + Views  │
+                    │     Gold Layer       │
+                    │ Business Data Model  │
                     └──────────┬───────────┘
                                │
                 ┌──────────────┼──────────────┐
                 ▼              ▼              ▼
-        Lead Scoring      Survival         CLV
-           Model          Analysis       Modeling
+         Lead Scoring    Survival Model      CLV
                 │              │              │
                 └──────────────┼──────────────┘
+                               ▼
+                       Uplift Modeling
                                │
                                ▼
-                    ┌──────────────────────┐
-                    │   Uplift Modeling    │
-                    │ Campaign Causal ML   │
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │ Streamlit Dashboard  │
-                    └──────────────────────┘
+                     Streamlit Dashboard
 ```
 
----
-
-## Data Model
-
-The Gold layer follows a dimensional model.
-
-### Dimensions
-
-* `dim_time`
-* `dim_leads`
-
-### Facts
-
-* `fact_activities`
-* `fact_opportunities`
-* `fact_campaign_touches`
-
-### Business-ready table
-
-* `lead_summary`
-
-`lead_summary` brings together the main lead-level attributes required by the ML and analytics layers.
+The complete workflow is orchestrated using **Prefect 3.x**.
 
 ---
 
-## Data Quality & ETL
+# Data Model
 
-The ETL pipeline follows a deterministic Bronze → Silver → Gold process.
+The Gold layer provides analytics-ready tables for downstream modeling.
+
+Major analytical outputs include:
+
+```text
+gold_customer
+gold_company
+gold_activity
+gold_conversion
+gold_campaign
+ml_lead_scores
+ml_survival_predictions
+ml_clv_predictions
+ml_uplift_predictions
+```
+
+The model separates:
+
+* Customer attributes
+* Company attributes
+* Behavioral activity
+* Conversion outcomes
+* Campaign treatment
+* Machine-learning predictions
+
+This allows individual analytical components to be developed without coupling the entire system together.
+
+---
+
+# ETL & Data Quality
+
+The ETL pipeline follows:
+
+```text
+Raw Data
+   ↓
+Bronze
+   ↓
+Silver
+   ↓
+Gold
+```
 
 ### Bronze
 
-Raw generated data is loaded without attempting to overwrite the source values.
+Raw source data is loaded into PostgreSQL with minimal transformation.
 
 ### Silver
 
 The cleaning layer handles:
 
-* Deduplication
-* Data-type normalization
-* Invalid records
-* Referential integrity
-* Null preservation
-* Rejected activity records
-
-Invalid activity records are moved into a quarantine table with an explicit rejection reason instead of being silently discarded.
+* Missing values
+* Type conversion
+* Duplicate detection
+* Invalid values
+* Standardization
+* Feature preparation
 
 ### Gold
 
-The Gold layer creates business-ready analytical structures for:
+The Gold layer creates business-ready analytical tables using SQL.
 
-* Lead scoring
-* Survival analysis
-* CLV
-* Uplift modeling
-* Dashboard reporting
+Data-quality checks are currently implemented directly in SQL and Python.
 
-The pipeline is designed to be **idempotent**, allowing target tables to be rebuilt safely.
+### Great Expectations
+
+Formal Great Expectations validation is currently treated as **manual / optional** rather than a required production component.
+
+The existing SQL and Python checks already validate the key assumptions needed by the downstream models.
 
 ---
 
-## ML Lead Scoring
+# ML Lead Scoring
 
-### Business Question
+**Script:** `scripts/train_ml_models.py`
 
-> **Which leads are most likely to convert?**
+Phase 6 predicts the probability that a lead will convert.
 
-Three classification approaches were evaluated:
+Models evaluated:
 
 * Logistic Regression
 * Random Forest
 * XGBoost
 
+The final model uses **Random Forest**.
+
 ### Model Performance
 
-| Model               |      AUC |
-| ------------------- | -------: |
-| Logistic Regression |    ~0.70 |
-| Random Forest       | **0.77** |
-| XGBoost             |    ~0.75 |
+**ROC-AUC: 0.7667**
 
-The **Random Forest** model was selected as the final lead-scoring model.
+The model output is converted into three operational lead tiers:
 
-### Final Model
+```text
+Top 20%     → High Priority
+Middle 60%  → Medium Priority
+Bottom 20%  → Low Priority
+```
 
-**Random Forest AUC: 0.7667**
-
-The model produces a probability of conversion for each lead.
-
-These probabilities are converted into three operational tiers using quantile-based thresholds:
-
-| Tier            | Population |
-| --------------- | ---------: |
-| High Priority   |        20% |
-| Medium Priority |        60% |
-| Low Priority    |        20% |
-
-The thresholds are stored in `models/model_metadata.json` so that scoring remains reproducible.
+This transforms a statistical probability into a practical CRM / RevOps workflow.
 
 ### Leakage Prevention
 
-The following fields are deliberately excluded from the model:
+Features that would only become available after conversion were excluded from model training.
 
-* `deal_value`
-* `duration_days`
-* `status`
-* `opportunity_stage`
-
-These fields contain information that would only become available after or during conversion and therefore could leak the target into the model.
+This ensures the model represents a realistic pre-conversion scoring scenario.
 
 ---
 
-## Survival Analysis
+# Survival Analysis
 
-### Business Question
+**Script:** `scripts/survival_analysis.py`
 
-> **Not only "will this lead convert?" — but "when will it convert?"**
+Phase 7 moves beyond:
 
-CreditPulse uses survival analysis to model time-to-conversion while correctly handling right-censored observations.
+> "Will this lead convert?"
 
-### Methods
+and asks:
 
-* Kaplan-Meier survival curves
-* Cox Proportional Hazards model
+> "When is this lead likely to convert?"
 
-A fixed snapshot date is used for reproducibility rather than dynamically using the current date.
+Two approaches are used:
 
-### Cox Model
+### Kaplan-Meier
+
+Used to visualize the overall survival probability over time.
+
+### Cox Proportional Hazards
+
+Used to estimate how customer attributes influence the rate of conversion.
+
+Model performance:
 
 **C-index: 0.6753**
 
-Selected hazard-ratio findings include:
+The analysis produces:
 
-| Variable          | Hazard Ratio |
-| ----------------- | -----------: |
-| Referral          |         3.38 |
-| Webinar           |         2.36 |
-| SaaS              |         2.15 |
-| FinServ           |         1.88 |
-| Campaign received |         1.52 |
-| Total activities  |         1.03 |
-| EMEA              |         0.91 |
+* Survival probability
+* Estimated median conversion time
+* Hazard ratios
+* Kaplan-Meier curves
+* Time-to-event predictions
 
-A hazard ratio above 1 indicates faster conversion relative to the baseline, while a value below 1 indicates slower conversion.
-
-### Kaplan-Meier Findings
-
-Median time-to-conversion varies substantially by lead source.
-
-Examples:
-
-* Referral: ~3,787 days
-* Webinar: ~5,430 days
-* Trade Show: ~5,652 days
-* LinkedIn: ~6,031 days
-* Website: median not reached
-* Cold Call: median not reached
-
-The survival model also produces a predicted median time-to-conversion for individual leads.
+This adds a temporal dimension to the lead-scoring problem.
 
 ---
 
-## Customer Lifetime Value
+# Customer Lifetime Value
 
-### Business Question
+**Script:** `scripts/clv_modeling.py`
 
-> **What is each lead worth after accounting for both conversion probability and time?**
+Phase 8 combines:
 
-CreditPulse uses a survival-integrated and discounted CLV approach:
+* Conversion probability
+* Survival information
+* Revenue
+* Customer duration
+* Discounting
+
+to estimate expected customer lifetime value.
+
+### CLV Formula
+
+The conceptual calculation is:
 
 ```text
-CLV = P(convert) × effective deal value × exp(-r × t)
+CLV =
+Expected Revenue
+× Survival Probability
+× Conversion Probability
+× Discount Factor
 ```
 
-Where:
-
-* `P(convert)` = predicted conversion probability
-* `effective deal value` = observed or imputed deal value
-* `r` = annual discount rate
-* `t` = expected time to conversion
+The implementation integrates survival probabilities over the expected customer lifetime.
 
 ### Portfolio Results
 
 | Metric              |            Value |
 | ------------------- | ---------------: |
-| Total portfolio CLV | **$170,444,069** |
-| Median CLV / lead   |       **$1,936** |
-| Mean CLV / lead     |       **$3,351** |
+| Total Portfolio CLV | **$170,444,069** |
+| Median CLV          |       **$1,936** |
+| Mean CLV            |       **$3,351** |
 | P90 CLV             |       **$7,517** |
 | Maximum CLV         |     **$131,689** |
+| Discount Rate       |          **10%** |
 
-The model uses a **10% annual discount rate**.
+Approximately **20,473 records** required imputed customer-lifetime information.
 
-### Imputed Deal Values
-
-20,473 leads have no recorded opportunity.
-
-For these leads, deal value is imputed using the industry median.
-
-The `used_imputed_deal` flag is retained so the source of the valuation remains auditable.
-
-### CLV Segmentation
-
-| Tier   | Population |
-| ------ | ---------: |
-| High   |    Top 20% |
-| Medium | Middle 30% |
-| Low    | Bottom 50% |
-
-The dashboard also combines CLV with lead risk to create a **value × risk quadrant**.
+The output turns individual lead/customer predictions into a portfolio-level value estimate.
 
 ---
 
-## Uplift Modeling
+# Uplift Modeling
 
-**Script:** `scripts/uplift_modeling.py` — Phase 9
-**Table:** `ml_uplift_predictions`
+**Script:** `scripts/uplift_modeling.py`
 
-### Why uplift modeling
+Phase 9 moves from prediction into **intervention decisioning**.
 
-Phase 6 answered *"will this lead convert?"*
-Phase 7 answered *"when will it convert?"*
-Phase 8 answered *"what is this lead worth?"*
+Previous phases answer:
 
-Phase 9 answers a fundamentally different question: **"will this lead convert *because* of the campaign?"** — not just *"does the campaign work on average?"*
+* **Phase 6:** Who will convert?
+* **Phase 7:** When will they convert?
+* **Phase 8:** How valuable are they?
 
-Standard A/B testing only reveals the **average treatment effect** across all leads. Uplift modeling reveals the **conditional treatment effect** — which specific leads benefit, which are unaffected, and which are actively harmed by intervention.
+Uplift modeling asks:
 
-### The four segments
+> **Will this lead convert because we intervene?**
 
-| Segment            | Control behaviour | Treatment behaviour | Action                        |
-| ------------------ | ----------------- | ------------------- | ----------------------------- |
-| **Persuadable**    | Would not convert | Converts            | **Target these**              |
-| **Sure Thing**     | Would convert     | Converts            | Skip — spend is wasted        |
-| **Lost Cause**     | Would not convert | Would not convert   | Skip — no campaign helps      |
-| **Do Not Disturb** | Would convert     | Would not convert   | **Suppress — campaign hurts** |
+This distinction is critical.
 
-Only **Persuadables** justify the campaign spend. **Do Not Disturbs** are where the campaign actively backfires.
+A normal A/B test estimates the **average treatment effect** across a population.
 
-### Methodology — T-learner
+Uplift modeling estimates the **conditional treatment effect for individual customers**.
 
-Two independent XGBoost classifiers are trained:
+## Four Uplift Segments
 
-1. **Treatment model** — fit only on leads that received the campaign
-2. **Control model** — fit only on leads that did not
+Each customer is classified into one of four behavioral groups:
 
-For each lead, predicted uplift is:
+| Segment            | Control           | Treatment         | Marketing Action              |
+| ------------------ | ----------------- | ----------------- | ----------------------------- |
+| **Persuadable**    | Would not convert | Converts          | Target                        |
+| **Sure Thing**     | Converts          | Converts          | Skip unnecessary intervention |
+| **Lost Cause**     | Would not convert | Would not convert | Skip                          |
+| **Do Not Disturb** | Converts          | Does not convert  | Suppress                      |
+
+The objective is therefore not simply:
+
+> "Who has the highest conversion probability?"
+
+but:
+
+> "Who has the highest incremental response to intervention?"
+
+---
+
+## T-Learner Architecture
+
+CreditPulse uses a **T-learner**.
+
+Two separate XGBoost classifiers are trained:
 
 ```text
-uplift = P(convert | treatment) − P(convert | control)
+                  Customer Features
+                         │
+              ┌──────────┴──────────┐
+              ▼                     ▼
+       Treatment Model       Control Model
+         XGBoost               XGBoost
+              │                     │
+              ▼                     ▼
+       P(convert | T)        P(convert | C)
+              │                     │
+              └──────────┬──────────┘
+                         ▼
+              Uplift = P(T) - P(C)
 ```
 
-This is the classic T-learner approach. It is simple, interpretable, and well-suited to the balanced arm sizes we have (11,552 Treatment vs. 11,337 Control).
+The core uplift calculation is:
 
-### Features used
+```text
+Uplift =
+P(convert | treatment)
+-
+P(convert | control)
+```
 
-**Numeric:** `total_activities`, `company_size`
-**Categorical:** `industry`, `lead_source`, `region`, `job_title`
+### Treatment / Control Population
 
-**Deliberately excluded:**
+The dataset contains approximately balanced treatment arms:
 
-* `treatment_group` — that's the split variable, not a predictor
-* `campaign_response` — a post-treatment variable that would leak the treatment effect
+| Arm       | Records |
+| --------- | ------: |
+| Treatment |  11,552 |
+| Control   |  11,337 |
 
-### Model quality
+### Features
 
-| Arm       | AUC (holdout) |
-| --------- | ------------- |
-| Treatment | 0.7020        |
-| Control   | 0.7024        |
+Numeric:
 
-The two arms perform almost identically, which validates that the models are learning genuine per-lead conversion probability in each condition — not spuriously distinguishing the arms.
+* `total_activities`
+* `company_size`
 
-### Aggregate results
+Categorical:
 
-Baseline conversion:
+* `industry`
+* `lead_source`
+* `region`
+* `job_title`
 
-* **Control:** 27.65% (11,337 leads)
-* **Treatment:** 33.00% (11,552 leads)
-* **Raw average uplift:** +5.35pp
+The following treatment variables are excluded from the feature set to avoid leakage:
 
-Per-lead predicted uplift:
+* `treatment_group`
+* `campaign_response`
 
-| Metric        | Value      |
-| ------------- | ---------- |
-| Mean uplift   | **+4.82%** |
-| Median uplift | **+4.37%** |
-| P90 uplift    | +16.21%    |
-| P10 uplift    | −5.62%     |
+---
 
-The model's mean predicted uplift closely matches the observed Treatment-minus-Control difference — a strong sanity check that the T-learner is not drifting from the ground truth.
+## Model Performance
 
-### Segment distribution
+Treatment-arm model:
 
-| Segment            |      Count | % of population | Mean uplift |
-| ------------------ | ---------: | --------------: | ----------: |
-| **Persuadable**    | **10,730** |       **46.9%** | **+12.31%** |
-| Lost Cause         |      5,191 |           22.7% |      +0.67% |
-| Sure Thing         |      4,356 |           19.0% |      +0.43% |
-| **Do Not Disturb** |  **2,612** |       **11.4%** | **−10.37%** |
+**AUC: 0.7020**
 
-### Key findings
+Control-arm model:
 
-**1. Almost half the portfolio is Persuadable.** The campaign is broad-based; it produces meaningful uplift on 10,730 leads. This is the segment to prioritise.
+**AUC: 0.7024**
 
-**2. Over 2,600 leads are actively harmed by the campaign.** These are overwhelmingly high-baseline leads (Referral source, SaaS industry) that already convert at 77–83% without intervention, but drop to 22–28% when the campaign runs on them. **Suppressing the campaign on this segment saves budget AND improves outcomes.**
+Observed conversion:
 
-**3. A/B testing cannot find the Do Not Disturb segment.** It only reports the average. Uplift modeling identifies the specific 2,612 leads where intervention is counter-productive.
+| Group     | Conversion |
+| --------- | ---------: |
+| Control   |     27.65% |
+| Treatment |     33.00% |
 
-### Evaluating the model — the Qini curve
+Raw average uplift:
 
-The Qini curve is the uplift modeling equivalent of the ROC curve. It plots cumulative incremental conversions as we target leads in predicted-uplift order:
+**+5.35 percentage points**
 
-* **Steeper initial slope** = the top of the ranking captures the strongest persuadables
-* **Curve above the diagonal** = the model's ranking beats random targeting
-* **Peak Qini** = maximum incremental conversions available from prioritising by this model
+However, the individual uplift distribution is much more informative than the average treatment effect.
 
-The model's Qini curve sits well above the random-targeting diagonal, peaking around **+1,200 incremental conversions** at roughly 60% of the population.
+| Metric | Predicted Uplift |
+| ------ | ---------------: |
+| Mean   |           +4.82% |
+| Median |           +4.37% |
+| P90    |          +16.21% |
+| P10    |           -5.62% |
+
+---
+
+## Uplift Segment Distribution
+
+| Segment            | Records | Share | Mean Uplift |
+| ------------------ | ------: | ----: | ----------: |
+| **Persuadable**    |  10,730 | 46.9% |     +12.31% |
+| **Lost Cause**     |   5,191 | 22.7% |      +0.67% |
+| **Sure Thing**     |   4,356 | 19.0% |      +0.43% |
+| **Do Not Disturb** |   2,612 | 11.4% |     -10.37% |
+
+The important business insight is that the average treatment effect hides substantial customer-level variation.
+
+Almost half of the population is classified as **Persuadable**, while more than **2,600 customers** fall into the **Do Not Disturb** segment.
+
+The latter group has negative predicted treatment effects.
+
+For example, some high-baseline segments such as Referral / SaaS customers already have very high conversion rates without intervention, while campaign exposure can reduce their predicted response.
+
+This creates a practical marketing action:
+
+```text
+High positive uplift
+        ↓
+Target
+
+Low / zero uplift
+        ↓
+Avoid unnecessary spend
+
+Negative uplift
+        ↓
+Suppress intervention
+```
+
+---
+
+## Qini Curve
+
+The project also evaluates cumulative incremental conversions through a **Qini-style uplift curve**.
+
+The curve reaches a peak of approximately:
+
+**+1,200 incremental conversions**
+
+around the **60% population mark**.
+
+This provides a way to evaluate whether ranking customers by predicted uplift produces more incremental conversions than indiscriminate targeting.
 
 ### Outputs
 
-* `ml_uplift_predictions` table — per-lead P_treatment, P_control, uplift, segment
-* `models/uplift_summary.json` — aggregate stats, arm metrics, segment counts
+The model writes:
+
+```text
+ml_uplift_predictions
+models/uplift_summary.json
+```
 
 ---
 
-## Dashboard
+# Pipeline Orchestration
 
-The Streamlit dashboard provides an executive view of the complete analytics pipeline.
+**Flow:** `orchestration/pipeline_flow.py` — Phase 5
+**Framework:** **Prefect 3.x** — Python-native workflow orchestration
 
-### Pages
+Prefect provides flow/task orchestration, retries, timeouts, dependency tracking, scheduling, and run-level observability for the CreditPulse pipeline.
 
-1. **Overview**
-2. **Customer Analytics**
-3. **Risk Analysis**
-4. **Interventions**
-5. **ML Models**
-6. **Survival Analysis**
-7. **CLV**
-8. **Data & ETL**
-9. **Dashboard / Executive View**
-10. **Settings**
+## Why Prefect, not Airflow
 
-### ML Models Page
+Airflow was not selected for the local Windows implementation because it would require an additional Linux-compatible environment such as WSL2 or Docker.
 
-Displays:
+Prefect is Python-native and runs directly in the existing Python environment, while still providing the workflow concepts required here: tasks, dependencies, retries, timeouts, scheduling, and UI-based monitoring.
 
-* Model AUC
-* Accuracy
-* F1
-* Precision
-* Recall
-* Logistic Regression vs Random Forest vs XGBoost
-* Lead tier distribution
-* Calibration chart
-
-### Survival Analysis Page
-
-Displays:
-
-* C-index
-* Event count
-* Total leads
-* Kaplan-Meier curves
-* Median time-to-conversion by lead source
-* Cox hazard ratios
-* 95% confidence intervals
-* Predicted median time-to-conversion
-* Fastest-converting leads
-
-### CLV Page
-
-Displays:
-
-* Total CLV
-* Median CLV
-* Mean CLV
-* CLV distribution
-* CLV tier distribution
-* Value × risk quadrant
-* Top 25 leads
-* CLV by industry
-* CLV by lead source
-
-### Uplift Modeling
-
-The Phase 9 outputs are available for analytical use through:
-
-* `ml_uplift_predictions`
-* Per-lead treatment probability
-* Per-lead control probability
-* Predicted uplift
-* Uplift segment
-* Qini evaluation
+The underlying pipeline logic remains portable because each stage is already implemented as an independent Python/SQL operation.
 
 ---
 
-## Infrastructure Notes
+## What the Flow Does
 
-The project was developed locally using **PostgreSQL 18.6 on Windows**.
-
-The PostgreSQL data directory was moved from the default system drive to:
+The complete CreditPulse pipeline runs in dependency order:
 
 ```text
-D:\pgdata
+load_bronze
+    ↓
+clean_to_silver
+    ↓
+build_gold
+    ↓
+create_survival_view
+    ↓
+train_ml_models
+    ↓
+survival_analysis
+    ↓
+clv_modeling
+    ↓
+uplift_modeling
 ```
 
-### The problem
-
-Earlier pipeline runs wrote approximately 250 MB to the C: drive.
-
-Eventually the system reached approximately:
+The flow is defined in:
 
 ```text
-0.42 GB free
+orchestration/pipeline_flow.py
 ```
 
-PostgreSQL subsequently failed with:
+and exposed as:
+
+```text
+creditpulse_pipeline
+```
+
+Prefect automatically tracks task state and dependencies, allowing individual tasks to be monitored independently.
+
+---
+
+## Production-Grade Features
+
+| Feature                  | Implementation                                                     |
+| ------------------------ | ------------------------------------------------------------------ |
+| **Retry policy**         | `@task(retries=2, retry_delay_seconds=30)` on data tasks           |
+| **Task timeouts**        | `timeout_seconds=600` on every task                                |
+| **VenV-safe subprocess** | Explicitly uses `.venv/Scripts/python.exe`                         |
+| **Structured logging**   | Script stdout/stderr streamed to the Prefect UI with `│` prefix    |
+| **Failure isolation**    | A failed task stops the pipeline rather than continuing downstream |
+| **Run history**          | Flow runs, task states, logs, and execution graphs are retained    |
+
+Prefect supports task-level retries and timeout configuration directly through task decorators.
+
+---
+
+## Verified Run
+
+**Flow run: `industrious-yak`**
+
+**Status: Completed**
+
+**Total runtime: 5 minutes 11 seconds**
+
+All 8 tasks passed.
+
+| Task                   | Duration |
+| ---------------------- | -------: |
+| `load_bronze`          |  ~45 sec |
+| `clean_to_silver`      |  ~50 sec |
+| `build_gold`           |   ~5 sec |
+| `create_survival_view` |   ~3 sec |
+| `train_ml_models`      |  ~75 sec |
+| `survival_analysis`    |  ~60 sec |
+| `clv_modeling`         |  ~10 sec |
+| `uplift_modeling`      |  ~25 sec |
+
+The Prefect UI provides the corresponding flow graph, task states, execution timings, and logs.
+
+---
+
+## Running the Flow
+
+### Manually
+
+```bash
+python orchestration/pipeline_flow.py
+```
+
+### With the Prefect UI
+
+Start the local Prefect server:
+
+```bash
+prefect server start
+```
+
+Then, in a second terminal:
+
+```bash
+python orchestration/pipeline_flow.py
+```
+
+Open the local Prefect UI at:
+
+```text
+http://127.0.0.1:4200
+```
+
+The UI provides visibility into flow runs, task states, execution logs, and the dependency graph.
+
+### Optional Scheduled Deployment
+
+A nightly deployment can be configured with:
+
+```bash
+prefect deployment build orchestration/pipeline_flow.py:creditpulse_pipeline \
+    --name "nightly" --cron "0 6 * * *" --apply
+
+prefect worker start --pool "default-agent-pool"
+```
+
+This allows the same pipeline to move from manual execution toward scheduled refreshes.
+
+---
+
+## Design Note — The `survival_analysis` Hang
+
+The first two complete flow runs stalled at:
+
+```text
+survival_analysis
+```
+
+Prefect's task-level observability made the bottleneck immediately visible.
+
+### Root Cause
+
+The original implementation used:
+
+```python
+cph.predict_median()
+```
+
+for approximately **50,858 leads**.
+
+The calculation evaluated survival information independently across leads and took more than **20 minutes**.
+
+### Optimization
+
+The implementation was rewritten to:
+
+1. Generate the survival function once across all leads.
+2. Use a fixed time grid.
+3. Derive individual median survival times using a NumPy mask.
+
+This reduced the runtime to approximately:
+
+**~30 seconds**
+
+representing roughly a:
+
+**40× speedup**
+
+The issue demonstrated one of the practical benefits of orchestration: the pipeline did not simply "run slowly"; task-level observability identified exactly which stage required investigation.
+
+---
+
+# Dashboard
+
+CreditPulse includes a Streamlit dashboard providing both executive and analytical views.
+
+### Dashboard Pages
+
+* **Overview**
+* **Customer Analytics**
+* **Risk Analysis**
+* **Interventions**
+* **ML Models**
+* **Survival Analysis**
+* **CLV**
+* **Data & ETL**
+* **Executive View**
+* **Settings**
+
+The dashboard combines:
+
+* Lead scoring
+* Conversion probability
+* Survival predictions
+* CLV
+* Uplift segments
+* Customer characteristics
+* Data-pipeline information
+
+The goal is to convert model outputs into business-readable decision support rather than exposing raw model objects alone.
+
+---
+
+# Infrastructure Notes
+
+## PostgreSQL
+
+CreditPulse uses PostgreSQL locally on Windows.
+
+The project initially encountered a storage issue because PostgreSQL data was consuming space on the C: drive.
+
+At one point the available disk space dropped to approximately:
+
+```text
+0.42 GB
+```
+
+This resulted in:
 
 ```text
 No space left on device
 ```
 
-The Windows service wrapper initially obscured the underlying PostgreSQL error.
+The PostgreSQL data directory was subsequently moved to:
 
-### Resolution
+```text
+D:\pgdata
+```
 
-The PostgreSQL installation was rebuilt using the EDB Windows installer with the data directory configured on `D:\pgdata`.
+The PostgreSQL installation was rebuilt through EDB with the new data location.
 
-A disk-space guard was also added to the pipeline to reduce the risk of future failures.
-
-### Lesson
-
-For local data engineering projects, **storage planning is part of the engineering problem**, particularly when repeatedly rebuilding analytical databases.
+A disk-space guard was also added to prevent the same failure from silently affecting future pipeline runs.
 
 ---
 
-## Setup & Running Locally
+# Setup & Running Locally
 
-### Requirements
+## 1. Clone the Repository
 
-* Python 3.13
-* PostgreSQL 18+
-* Git
+```bash
+git clone <repository-url>
+cd CreditPulse
+```
 
-### Install dependencies
+## 2. Create Virtual Environment
+
+```bash
+python -m venv .venv
+```
+
+Activate it:
+
+### Windows
+
+```bash
+.venv\Scripts\activate
+```
+
+## 3. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Configure environment
+## 4. Configure PostgreSQL
 
-Copy:
+Create the required PostgreSQL database and update the project's database configuration.
+
+## 5. Generate / Load Data
+
+Run the relevant data-generation and loading scripts.
+
+## 6. Execute the Pipeline
+
+The individual stages can be executed manually:
 
 ```text
-.env.example
+Bronze
+  ↓
+Silver
+  ↓
+Gold
+  ↓
+ML
+  ↓
+Survival
+  ↓
+CLV
+  ↓
+Uplift
 ```
 
-to:
-
-```text
-.env
-```
-
-and configure the PostgreSQL connection.
-
-### Generate synthetic data
+or through the Prefect orchestration flow:
 
 ```bash
-python scripts/generate_synthetic_data.py
+python orchestration/pipeline_flow.py
 ```
 
-### Create Bronze tables
+## 7. Launch Dashboard
 
-```bash
-python scripts/run_sql_file.py sql/create_bronze_tables.sql
-```
-
-### Load raw data
-
-```bash
-python scripts/load_to_postgres.py
-```
-
-### Create Silver tables
-
-```bash
-python scripts/run_sql_file.py sql/create_silver_tables.sql
-```
-
-### Clean Bronze → Silver
-
-```bash
-python scripts/clean_bronze_to_silver.py
-```
-
-### Create Gold tables
-
-```bash
-python scripts/run_sql_file.py sql/create_gold_tables.sql
-```
-
-### Train ML models
-
-```bash
-python scripts/train_ml_models.py
-```
-
-### Run survival analysis
-
-```bash
-python scripts/survival_analysis.py
-```
-
-### Run CLV modeling
-
-```bash
-python scripts/clv_modeling.py
-```
-
-### Run uplift modeling
-
-```bash
-python scripts/uplift_modeling.py
-```
-
-### Launch dashboard
+Run:
 
 ```bash
 streamlit run app.py
 ```
 
-The dashboard will be available at:
+---
 
-```text
-http://localhost:8501
-```
+# Key Design Decisions
+
+## Why Synthetic Data?
+
+The project is designed as a public portfolio project.
+
+Synthetic data allows the complete architecture and modeling process to be demonstrated without exposing confidential customer information.
 
 ---
 
-## Key Design Decisions
+## Why PostgreSQL?
 
-### 1. Fixed snapshot date
+PostgreSQL provides a realistic relational database environment for:
 
-The project uses:
-
-```python
-AS_OF_DATE = 2026-09-06
-```
-
-rather than dynamically using today's date.
-
-This makes the survival and CLV calculations reproducible.
-
-### 2. Preserve nulls in Silver
-
-Missing values are not automatically replaced during the cleaning layer.
-
-Imputation is treated as a modeling decision rather than a generic ETL operation.
-
-### 3. Quarantine invalid records
-
-Invalid activity records are moved into:
-
-```text
-activities_rejected
-```
-
-with an explicit rejection reason.
-
-### 4. Conversion definition
-
-`event_converted` is sourced from:
-
-```text
-leads_clean.status
-```
-
-rather than opportunity stage.
-
-A lead can convert without becoming an opportunity, so using opportunity stage as the conversion definition would silently misclassify true conversions.
-
-### 5. Quantile-based risk tiers
-
-Lead risk tiers use quantile thresholds to create a usable:
-
-```text
-20 / 60 / 20
-```
-
-population split.
-
-The thresholds are stored in model metadata for reproducibility.
-
-### 6. Idempotent loads
-
-Target tables are truncated before writes so that failed or partial pipeline executions can be safely rebuilt.
-
-### 7. Feature leakage prevention
-
-Post-outcome variables are excluded from ML models.
-
-Examples:
-
-```text
-deal_value
-duration_days
-status
-opportunity_stage
-```
-
-For uplift modeling, post-treatment variables such as:
-
-```text
-campaign_response
-```
-
-are also excluded.
+* ETL
+* SQL transformations
+* Analytical tables
+* Feature preparation
+* Model outputs
 
 ---
 
-## Project Status
+## Why Medallion Architecture?
 
-| Phase                                        | Status                                                                  |
-| -------------------------------------------- | ----------------------------------------------------------------------- |
-| 1. Synthetic Data Generation                 | ✅ Complete                                                              |
-| 2. PostgreSQL / Bronze Layer                 | ✅ Complete                                                              |
-| 3. Silver Cleaning & Validation              | ✅ Complete                                                              |
-| 4. Gold Data Model                           | ✅ Complete                                                              |
-| 5. Airflow Orchestration                     | ⬜ Not started                                                           |
-| 6. ML Lead Scoring                           | ✅ Complete — Random Forest, AUC 0.77                                    |
-| 7. Survival Analysis                         | ✅ Complete — Cox PH, C-index 0.675                                      |
-| 8. Customer Lifetime Value                   | ✅ Complete — $170M portfolio CLV                                        |
-| 9. Intervention Experiment (Causal / Uplift) | ✅ **Complete — T-learner, 10,730 Persuadables / 2,612 Do Not Disturbs** |
-| 10. Dashboard Polish                         | ⬜ Pending                                                               |
-| 11. Deployment / Documentation               | ⬜ Pending                                                               |
+The Bronze → Silver → Gold structure separates:
+
+* Raw ingestion
+* Cleaning / validation
+* Business-ready analytical data
+
+This makes downstream modeling easier to maintain and debug.
 
 ---
 
-## What's Next
+## Why Multiple ML Techniques?
 
-All ML / analytics phases (6 through 9) are now complete:
-
-* ✅ **Phase 6** — Lead scoring (Random Forest, AUC 0.77)
-* ✅ **Phase 7** — Survival analysis (Cox PH, C-index 0.675)
-* ✅ **Phase 8** — Customer lifetime value (survival-integrated, $170M portfolio)
-* ✅ **Phase 9** — Uplift modeling (T-learner, 10,730 Persuadables / 2,612 Do Not Disturbs)
-
-The remaining work is operational polish:
-
-* **Phase 5 — Airflow orchestration.** A DAG that runs the full pipeline
-  (`load_to_postgres → clean_bronze_to_silver → create_gold → train_ml_models →
-  survival_analysis → clv_modeling → uplift_modeling`) on a schedule, with retries
-  and alerting.
-
-* **Phase 10 — Dashboard polish.** Replace the deprecated `use_container_width`
-  argument with `width='stretch'` throughout `app.py`.
-
-* **Phase 11 — Deployment notes.** A Docker Compose setup for local
-  reproduction, plus a `CONTRIBUTING.md` documenting the full pipeline run
-  sequence.
-
-The ML and analytics stack is production-quality. What remains is orchestration
-and packaging.
-
----
-
-## Key Takeaway
-
-CreditPulse demonstrates a complete progression from raw CRM data to business decision-making:
+Each model answers a different business question:
 
 ```text
-Raw CRM Data
-     ↓
-Data Engineering
-     ↓
 Lead Scoring
      ↓
+Who is likely to convert?
+
 Survival Analysis
      ↓
-Customer Lifetime Value
+When are they likely to convert?
+
+CLV
      ↓
-Causal Uplift Modeling
+How valuable are they?
+
+Uplift Modeling
      ↓
-Business Action
+Will intervention change the outcome?
 ```
 
-The important distinction is that each analytical layer answers a different business question.
-
-**Classification** identifies likely converters.
-
-**Survival analysis** estimates when they will convert.
-
-**CLV** estimates their economic value.
-
-**Uplift modeling** determines who should actually receive an intervention.
-
-Together, these create a decision-oriented **Marketing / RevOps Analytics Engineering** portfolio project rather than a standalone machine-learning exercise.
+Together they create a more complete decision system than a single predictive model.
 
 ---
 
-## Tech Stack
+## Why Uplift Modeling?
 
-### Data & Engineering
+A customer with a high probability of conversion is not necessarily a customer who needs marketing intervention.
 
-* Python 3.13
-* PostgreSQL 18.6
-* SQLAlchemy
-* psycopg2-binary
-* python-dotenv
-* Pandas
-* NumPy
-* SciPy
+For example:
 
-### Machine Learning
+```text
+Customer A
+P(convert without campaign) = 80%
+P(convert with campaign)    = 82%
 
-* scikit-learn
-* XGBoost
-* lifelines
+Uplift = +2%
+```
 
-### Analytics & Visualization
+versus:
 
-* Streamlit
-* Plotly
+```text
+Customer B
+P(convert without campaign) = 30%
+P(convert with campaign)    = 55%
 
-### Development
+Uplift = +25%
+```
 
-* Git
-* GitHub
-* draw.io
+Customer B may provide substantially more incremental value from intervention even though Customer A has the higher absolute conversion probability.
+
+This distinction is central to the project's Marketing / RevOps positioning.
 
 ---
 
-## Repository Structure
+# Project Status
+
+| Phase                               | Status                                                      |
+| ----------------------------------- | ----------------------------------------------------------- |
+| 1. Setup & Synthetic Data           | ✅ Complete                                                  |
+| 2. ETL Pipeline                     | ✅ Complete                                                  |
+| 3. Bronze → Silver → Gold           | ✅ Complete                                                  |
+| 4. Great Expectations               | 🔶 Manual only                                              |
+| **5. Pipeline Orchestration**       | ✅ **Complete — Prefect flow, 8 tasks, 5m 11s verified run** |
+| 6. ML Lead Scoring                  | ✅ Complete                                                  |
+| 7. Survival Analysis                | ✅ Complete                                                  |
+| 8. Customer Lifetime Value          | ✅ Complete                                                  |
+| 9. Intervention Experiment / Uplift | ✅ Complete                                                  |
+| 10. Dashboard Polish                | 🔶 Remaining                                                |
+| 11. Deployment                      | 🔶 Remaining                                                |
+
+---
+
+# What's Next
+
+Every functional phase is complete. The remaining work is operational polish:
+
+* **Phase 4 — Great Expectations.** Formalize the ad-hoc data-quality checks currently done in SQL into a declarative expectations suite. Nice-to-have; the current checks already demonstrate the concept.
+
+* **Phase 10 — Dashboard polish.** Replace the deprecated `use_container_width` argument with `width='stretch'` throughout `app.py`. Non-breaking, just removes console warnings.
+
+* **Phase 11 — Deployment.** Add Docker Compose for local reproduction, plus a public Streamlit deployment (Community Cloud or Hugging Face Spaces) so the dashboard is clickable from a URL. Strongest remaining differentiator for a portfolio piece.
+
+The ML stack (Phases 6–9), the medallion data pipeline (Phases 1–3), and orchestration (Phase 5) are all production-quality and fully documented.
+
+---
+
+# Key Takeaway
+
+CreditPulse is designed to demonstrate an end-to-end analytical workflow:
+
+```text
+Synthetic Customer Data
+          ↓
+      PostgreSQL
+          ↓
+Bronze → Silver → Gold
+          ↓
+   Lead Scoring
+          ↓
+ Survival Analysis
+          ↓
+         CLV
+          ↓
+  Uplift Modeling
+          ↓
+  Marketing Decisioning
+          ↓
+      Dashboard
+```
+
+The project therefore demonstrates more than predictive modeling.
+
+It combines:
+
+* **SQL**
+* **PostgreSQL**
+* **Python**
+* **ETL**
+* **Data Modeling**
+* **Machine Learning**
+* **Survival Analysis**
+* **Customer Lifetime Value**
+* **Causal / Uplift Modeling**
+* **Workflow Orchestration**
+* **Streamlit**
+* **Business Decisioning**
+
+The central idea is:
+
+> **Predict the customer. Understand the timing. Quantify the value. Measure the intervention.**
+
+---
+
+# Tech Stack
+
+| Layer             | Technology              |
+| ----------------- | ----------------------- |
+| Language          | Python                  |
+| Database          | PostgreSQL              |
+| ETL               | Python + SQL            |
+| Data Architecture | Bronze / Silver / Gold  |
+| ML                | Scikit-learn + XGBoost  |
+| Survival Analysis | Lifelines               |
+| CLV               | Python / NumPy / Pandas |
+| Uplift Modeling   | XGBoost                 |
+| Orchestration     | Prefect 3.x             |
+| Dashboard         | Streamlit               |
+| Visualization     | Plotly                  |
+| Data Quality      | SQL / Python            |
+| Version Control   | Git / GitHub            |
+
+---
+
+# Repository Structure
 
 ```text
 CreditPulse/
 │
 ├── data/
-│   └── raw/
-│       ├── raw_leads.csv
-│       ├── raw_opportunities.csv
-│       ├── raw_activities.csv
-│       └── raw_campaign_touches.csv
+│   ├── raw/
+│   ├── processed/
+│   └── synthetic/
 │
 ├── models/
-│   ├── random_forest_pipeline.pkl
-│   ├── model_metadata.json
-│   ├── survival_cox_summary.json
-│   ├── survival_km_by_segment.json
-│   ├── clv_summary.json
-│   └── uplift_summary.json
+│   ├── lead_scoring/
+│   ├── survival/
+│   ├── clv/
+│   └── uplift/
+│
+├── orchestration/
+│   └── pipeline_flow.py
 │
 ├── scripts/
-│   ├── generate_synthetic_data.py
-│   ├── load_to_postgres.py
-│   ├── clean_bronze_to_silver.py
+│   ├── generate_data.py
+│   ├── load_bronze.py
+│   ├── clean_to_silver.py
+│   ├── create_gold_tables.py
 │   ├── train_ml_models.py
 │   ├── survival_analysis.py
 │   ├── clv_modeling.py
-│   ├── uplift_modeling.py
-│   └── disk_space_check.py
+│   └── uplift_modeling.py
 │
 ├── sql/
-│   ├── create_bronze_tables.sql
-│   ├── create_silver_tables.sql
-│   ├── create_gold_tables.sql
-│   ├── create_survival_tables.sql
-│   └── create_ml_tables.sql
+│   ├── bronze/
+│   ├── silver/
+│   └── gold/
 │
 ├── app.py
 ├── requirements.txt
-├── .env.example
-├── .gitignore
 └── README.md
 ```
 
 ---
 
-## Acknowledgements
+# Acknowledgements
 
-CreditPulse uses and builds upon:
+CreditPulse was built as an independent portfolio project to demonstrate the application of:
 
-* Faker
-* NumPy
-* Pandas
-* scikit-learn
-* XGBoost
-* lifelines
-* Streamlit
-* Plotly
+* Financial analytics concepts
+* Marketing analytics
+* Revenue operations
+* Customer analytics
+* Machine learning
+* Data engineering
+* Causal inference
 
----
-
-## Disclaimer
-
-CreditPulse uses **fully synthetic data** generated for educational and portfolio purposes.
-
-No real customer, financial, campaign, or company data is used.
-
-The project is intended to demonstrate analytics engineering, machine learning, causal modeling, and business decision-making workflows.
+The project intentionally uses synthetic data and does not represent the financial performance or credit decisions of any real organization.
 
 ---
 
-**Last updated: September 2026**
+# Disclaimer
+
+**CreditPulse is an educational and portfolio project.**
+
+All customer, financial, behavioral, and campaign data used in the project is synthetic.
+
+The model outputs should not be used for real-world credit decisions, customer targeting, financial decisions, or production marketing campaigns without appropriate validation, governance, fairness assessment, and domain review.
+
+---
+
+**Last Updated:** September 2026

@@ -1,4 +1,4 @@
-﻿import os
+import os
 import json
 import pandas as pd
 import numpy as np
@@ -55,13 +55,38 @@ def card(icon, label, value, note):
     """, unsafe_allow_html=True)
 
 
+def get_db_url():
+    """
+    Return the Postgres connection string.
+
+    Priority:
+      1. Streamlit Cloud secrets (st.secrets["DATABASE_URL"])
+      2. Local .env file (os.getenv("DATABASE_URL"))
+
+    This lets the same app run locally and on Streamlit Community Cloud
+    without code changes.
+    """
+    # Try Streamlit secrets first (cloud deployment)
+    try:
+        if "DATABASE_URL" in st.secrets:
+            return st.secrets["DATABASE_URL"]
+    except (FileNotFoundError, KeyError):
+        pass
+
+    # Fall back to .env (local development)
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        st.error(
+            "DATABASE_URL not found. Locally: set it in .env. "
+            "On Streamlit Cloud: set it in the app's Secrets settings."
+        )
+        st.stop()
+    return url
+
+
 @st.cache_data(ttl=300)
 def load_data():
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        st.error("DATABASE_URL is missing from your .env file.")
-        st.stop()
-    engine = create_engine(db_url)
+    engine = create_engine(get_db_url())
     return pd.read_sql("""
         SELECT
             lead_id, company_name, industry, company_size, job_title, lead_source, country, region,
@@ -486,7 +511,7 @@ def load_model_metadata():
 
 @st.cache_data(ttl=300)
 def load_scored_leads():
-    engine = create_engine(os.getenv("DATABASE_URL"))
+    engine = create_engine(get_db_url())
     try:
         return pd.read_sql("""
             SELECT
@@ -649,7 +674,7 @@ def load_survival_cox():
 
 @st.cache_data(ttl=300)
 def load_survival_predictions():
-    engine = create_engine(os.getenv("DATABASE_URL"))
+    engine = create_engine(get_db_url())
     try:
         return pd.read_sql("""
             SELECT p.lead_id, p.predicted_median_days,
@@ -836,7 +861,7 @@ def load_clv_summary():
 
 @st.cache_data(ttl=300)
 def load_clv_predictions():
-    engine = create_engine(os.getenv("DATABASE_URL"))
+    engine = create_engine(get_db_url())
     try:
         return pd.read_sql("""
             SELECT c.lead_id, c.clv_discounted, c.clv_undiscounted, c.clv_tier,
@@ -1019,7 +1044,7 @@ def load_uplift_summary():
 
 @st.cache_data(ttl=300)
 def load_uplift_predictions():
-    engine = create_engine(os.getenv("DATABASE_URL"))
+    engine = create_engine(get_db_url())
     try:
         return pd.read_sql("""
             SELECT u.lead_id, u.treatment_group, u.event_converted,
@@ -1251,7 +1276,7 @@ def render_uplift_page():
 
 @st.cache_data(ttl=300)
 def load_etl_metrics():
-    engine = create_engine(os.getenv("DATABASE_URL"))
+    engine = create_engine(get_db_url())
     row_counts = pd.read_sql("""
         SELECT 'Bronze' AS layer, 'raw_leads' AS table_name, COUNT(*) AS row_count FROM raw_leads
         UNION ALL SELECT 'Bronze', 'raw_opportunities', COUNT(*) FROM raw_opportunities
@@ -1762,3 +1787,5 @@ with insights_col:
     a1.button("Upload Data", use_container_width=True)
     a2.button("View Full Dashboard", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
+
+    
