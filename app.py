@@ -1,4 +1,4 @@
-﻿import os
+import os
 import json
 import pandas as pd
 import numpy as np
@@ -62,23 +62,17 @@ def get_db_url():
     Priority:
       1. Streamlit Cloud secrets (st.secrets["DATABASE_URL"])
       2. Local .env file (os.getenv("DATABASE_URL"))
-
-    Wrapped in a broad try/except because st.secrets may not be fully
-    available during the very first render on Streamlit Cloud.
     """
-    # Try Streamlit secrets first
     try:
         if "DATABASE_URL" in st.secrets:
             return st.secrets["DATABASE_URL"]
     except Exception:
         pass
 
-    # Fall back to environment variable
     url = os.getenv("DATABASE_URL")
     if url:
         return url
 
-    # Nothing worked — show a clear diagnostic
     st.error(
         "Could not find DATABASE_URL. On Streamlit Cloud, set it under "
         "App Settings → Secrets as:\n\n"
@@ -98,6 +92,31 @@ def load_data():
             campaign_response, treatment_group, opportunity_stage,
             deal_value, actual_close_date, duration_days
         FROM lead_summary
+    """, engine)
+
+
+@st.cache_data(ttl=300)
+def load_country_metrics():
+    """Aggregate per-country metrics from lead_summary + ML prediction tables."""
+    engine = create_engine(get_db_url())
+    return pd.read_sql("""
+        SELECT
+            l.country,
+            l.region,
+            COUNT(*) AS total_leads,
+            SUM(CASE WHEN l.event_converted = 1 THEN 1 ELSE 0 END) AS conversions,
+            AVG(CASE WHEN l.event_converted = 1 THEN 1.0 ELSE 0.0 END) AS conversion_rate,
+            AVG(l.deal_value) AS avg_deal_value,
+            SUM(l.deal_value) AS total_deal_value,
+            SUM(CASE WHEN s.risk_tier = 'High' THEN 1 ELSE 0 END) AS high_risk_count,
+            AVG(c.clv_discounted) AS avg_clv,
+            SUM(c.clv_discounted) AS total_clv
+        FROM lead_summary l
+        LEFT JOIN ml_lead_scores s ON s.lead_id = l.lead_id
+        LEFT JOIN ml_clv_predictions c ON c.lead_id = l.lead_id
+        GROUP BY l.country, l.region
+        HAVING COUNT(*) > 0
+        ORDER BY total_leads DESC
     """, engine)
 
 
@@ -1275,6 +1294,171 @@ def render_uplift_page():
 
 
 # ---------------------------------------------------------------------------
+# Geographic Map page
+# ---------------------------------------------------------------------------
+
+def render_map_page():
+    st.markdown('<div class="top-title">Geographic Map</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="description">Lead volume, conversion rate, CLV, and risk '
+        'distributed across countries. Toggle the metric to switch views '
+        'of the same data.</div>',
+        unsafe_allow_html=True,
+    )
+
+    df_country = load_country_metrics()
+    if df_country.empty:
+        st.info("No country data available.")
+        return
+
+    # --- Top KPI cards ---------------------------------------------------
+    total_leads = int(df_country["total_leads"].sum())
+    total_conversions = int(df_country["conversions"].sum())
+    global_conv = total_conversions / total_leads if total_leads else 0
+    total_clv = float(df_country["total_clv"].fillna(0).sum())
+    countries_with_leads = int((df_country["total_leads"] > 0).sum())
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Countries covered", f"{countries_with_leads:,}")
+    c2.metric("Total leads", f"{total_leads:,}")
+    c3.metric("Global conversion", f"{global_conv:.2%}")
+    c4.metric("Total portfolio CLV", f"${total_clv:,.0f}")
+
+    # --- Metric selector -------------------------------------------------
+    st.markdown('<div class="panel"><div class="panel-title">View configuration</div>',
+                unsafe_allow_html=True)
+    metric = st.radio(
+        "Metric",
+        ["Leads", "Conversion Rate", "CLV", "Risk"],
+        horizontal=True,
+        key="map_metric",
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- Configure metric-specific options -------------------------------
+    if metric == "Leads":
+        value_col = "total_leads"
+        color_scale = "Blues"
+        label = "Total leads"
+    elif metric == "Conversion Rate":
+        value_col = "conversion_rate"
+        color_scale = ["#ef5350", "#ffc21a", "#1eb27b"]
+        label = "Conversion rate"
+    elif metric == "CLV":
+        value_col = "total_clv"
+        color_scale = "Purples"
+        label = "Total CLV ($)"
+    else:
+        value_col = "high_risk_count"
+        color_scale = "Reds"
+        label = "High-risk leads"
+
+    plot_df = df_country.dropna(subset=[value_col]).copy()
+    plot_df[value_col] = plot_df[value_col].fillna(0)
+
+    # --- Render 2D choropleth -------------------------------------------
+    st.markdown(f'<div class="panel"><div class="panel-title">{label} by country</div>',
+                unsafe_allow_html=True)
+
+    fig = px.choropleth(
+        plot_df,
+        locations="country",
+        locationmode="country names",
+        color=value_col,
+        hover_name="country",
+        hover_data={"region": True, "total_leads": ":,"},
+        color_continuous_scale=color_scale,
+        labels={value_col: label},
+    )
+    fig.update_layout(
+        height=520,
+        margin=dict(l=5, r=5, t=10, b=5),
+        geo=dict(
+            showframe=False,
+            showcoastlines=True,
+            projection_type="natural earth",
+            bgcolor="#f6f9fd",
+        ),
+        paper_bgcolor="#f6f9fd",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- Top 10 + By region ---------------------------------------------
+    left, right = st.columns([1.2, 1])
+
+    with left:
+        st.markdown(f'<div class="panel"><div class="panel-title">'
+                    f'Top 10 countries by {label.lower()}</div>',
+                    unsafe_allow_html=True)
+        top10 = plot_df.sort_values(value_col, ascending=False).head(10).copy()
+        fig2 = px.bar(
+            top10.sort_values(value_col),
+            x=value_col,
+            y="country",
+            orientation="h",
+            color=value_col,
+            color_continuous_scale=color_scale,
+            labels={value_col: label, "country": ""},
+        )
+        fig2.update_layout(
+            height=380,
+            margin=dict(l=5, r=5, t=10, b=5),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            coloraxis_showscale=False,
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right:
+        st.markdown('<div class="panel"><div class="panel-title">By region</div>',
+                    unsafe_allow_html=True)
+        region_agg = df_country.groupby("region", as_index=False).agg(
+            total_leads=("total_leads", "sum"),
+            conversions=("conversions", "sum"),
+        )
+        region_agg["conversion_rate"] = (
+            region_agg["conversions"] / region_agg["total_leads"]
+        )
+        fig3 = px.bar(
+            region_agg.sort_values("conversion_rate", ascending=False),
+            x="region",
+            y="conversion_rate",
+            color="conversion_rate",
+            color_continuous_scale=["#b9d8ff", "#1769e0"],
+            labels={"region": "", "conversion_rate": "Conversion rate"},
+        )
+        fig3.update_traces(texttemplate="%{y:.1%}", textposition="outside")
+        fig3.update_layout(
+            height=380,
+            margin=dict(l=5, r=5, t=10, b=5),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            coloraxis_showscale=False,
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- Country drill-down ----------------------------------------------
+    st.markdown('<div class="panel"><div class="panel-title">Country drill-down</div>',
+                unsafe_allow_html=True)
+
+    top_countries = plot_df.sort_values("total_leads", ascending=False)["country"].tolist()
+    selected_country = st.selectbox("Select a country", top_countries, key="map_country_pick")
+
+    row = df_country[df_country["country"] == selected_country].iloc[0]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total leads", f"{int(row['total_leads']):,}")
+    c2.metric("Conversions", f"{int(row['conversions']):,}")
+    c3.metric("Conversion rate", f"{row['conversion_rate']:.1%}")
+    c4.metric("Avg CLV",
+              f"${row['avg_clv']:,.0f}" if pd.notnull(row["avg_clv"]) else "—")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
 # ETL / Data quality page
 # ---------------------------------------------------------------------------
 
@@ -1546,6 +1730,7 @@ with st.sidebar:
             "📈  Survival Analysis",
             "💎  CLV",
             "🎯  Uplift",
+            "🗺️  Geographic Map",
             "🗄️  Data & ETL",
             "📊  Dashboard",
             "⚙️  Settings"
@@ -1583,6 +1768,10 @@ if page == "💎  CLV":
 
 if page == "🎯  Uplift":
     render_uplift_page()
+    st.stop()
+
+if page == "🗺️  Geographic Map":
+    render_map_page()
     st.stop()
 
 if page == "🗄️  Data & ETL":
@@ -1792,3 +1981,4 @@ with insights_col:
     a2.button("View Full Dashboard", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
+    
