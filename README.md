@@ -2,6 +2,8 @@
 
 > **A production-style analytics platform combining credit risk, customer value, survival analysis, and causal intervention modeling — built to demonstrate the bridge between Finance Analytics and Marketing / RevOps.**
 
+**🔗 Live demo:** [creditpulse-analytics.streamlit.app](https://creditpulse-analytics.streamlit.app)
+
 CreditPulse is an end-to-end analytics platform built on **synthetic customer and credit data**.
 
 The project takes a traditional credit-risk problem and extends it into a broader customer analytics system:
@@ -105,6 +107,20 @@ The synthetic dataset is intentionally designed to contain realistic relationshi
 * Time-to-conversion
 * Customer value
 * Intervention response
+
+---
+
+## On Scale and Generalizability
+
+The dataset is deliberately sized at **~50,871 leads** (~250K activities, ~23K campaign touches, ~30K opportunities) — large enough for four production-grade models to produce statistically meaningful metrics (AUC 0.77, C-index 0.675, T-learner AUC ~0.70 per arm), but small enough that the entire medallion pipeline runs end-to-end on a laptop in under 5 minutes and can be publicly deployed on free-tier infrastructure.
+
+Real enterprise CRM systems process millions of leads. The **methodology is identical at that scale** — the same medallion pattern (Bronze → Silver → Gold), the same quantile-based risk tiers, the same survival and uplift techniques. Scaling further would mean changing the *infrastructure layer* (a cloud data warehouse such as Fabric or Snowflake, orchestrated incremental loads, partitioned fact tables) rather than the analytical code itself. In my day job at Frost & Sullivan, I build medallion pipelines on Microsoft Fabric against much larger volumes — this project demonstrates the same methodology in a self-contained, reproducible form.
+
+Why synthetic data specifically:
+
+* Real CRM lead-to-conversion datasets with outcome labels are proprietary; no company publishes them.
+* The generator mimics the statistical structure of a real B2B lead-scoring dataset — Referral leads convert at ~45%, Cold Call leads at ~9%, campaign responses carry realistic effect sizes, and irreducible noise is injected via a Gaussian term on the logit.
+* The resulting AUC (~0.77) sits squarely in the range real production lead-scoring systems achieve, which is the point: the methodology transfers one-to-one, only the numbers would change.
 
 ---
 
@@ -724,6 +740,8 @@ The issue demonstrated one of the practical benefits of orchestration: the pipel
 
 CreditPulse includes a Streamlit dashboard providing both executive and analytical views.
 
+**🔗 Live demo:** [creditpulse-analytics.streamlit.app](https://creditpulse-analytics.streamlit.app)
+
 ### Dashboard Pages
 
 * **Overview**
@@ -748,6 +766,10 @@ The dashboard combines:
 * Data-pipeline information
 
 The goal is to convert model outputs into business-readable decision support rather than exposing raw model objects alone.
+
+### Deployment
+
+The dashboard is deployed on **Streamlit Community Cloud**, with the Gold-layer analytical tables hosted on **Supabase Postgres**. The app reads the connection string from Streamlit's secrets system via a `get_db_url()` helper that falls back to a local `.env` file for offline development.
 
 ---
 
@@ -780,6 +802,13 @@ D:\pgdata
 The PostgreSQL installation was rebuilt through EDB with the new data location.
 
 A disk-space guard was also added to prevent the same failure from silently affecting future pipeline runs.
+
+## Cloud Deployment
+
+Two infrastructure issues surfaced during the Streamlit Cloud deployment:
+
+1. **Python version.** Streamlit Cloud initially defaulted to Python 3.14, which has no prebuilt wheels for `psycopg2-binary` or `pandas` — pip fell back to compiling from source and failed. Fixed by setting the app's Python version to **3.11** in the Streamlit Cloud dashboard.
+2. **Dependency surface.** The full `requirements.txt` (with `prefect`, `xgboost`, `lifelines`, `scikit-learn`) adds several minutes to the build. A minimal `requirements-cloud.txt` was introduced that contains only the runtime-serving dependencies, and is used as the deployed `requirements.txt`. The full list is preserved as `requirements-full.txt` for local development.
 
 ---
 
@@ -863,6 +892,12 @@ streamlit run app.py
 The project is designed as a public portfolio project.
 
 Synthetic data allows the complete architecture and modeling process to be demonstrated without exposing confidential customer information.
+
+---
+
+## Why This Dataset Size?
+
+The dataset is intentionally sized at ~50K leads. Large enough for four ML models to produce honest, non-trivial metrics; small enough to run end-to-end on a laptop in under 5 minutes and be publicly deployed on free-tier infrastructure. The methodology is identical at enterprise scale — only the infrastructure layer changes.
 
 ---
 
@@ -959,22 +994,22 @@ This distinction is central to the project's Marketing / RevOps positioning.
 | 7. Survival Analysis                | ✅ Complete                                                  |
 | 8. Customer Lifetime Value          | ✅ Complete                                                  |
 | 9. Intervention Experiment / Uplift | ✅ Complete                                                  |
-| 10. Dashboard Polish                | 🔶 Remaining                                                |
-| 11. Deployment                      | 🔶 Remaining                                                |
+| 10. Dashboard Polish                | 🔶 Cosmetic only                                            |
+| 11. Deployment                      | ✅ **Live on Streamlit Community Cloud**                    |
 
 ---
 
 # What's Next
 
-Every functional phase is complete. The remaining work is operational polish:
+Every functional phase is complete, and the app is publicly deployed.
+
+Remaining items are cosmetic or optional:
 
 * **Phase 4 — Great Expectations.** Formalize the ad-hoc data-quality checks currently done in SQL into a declarative expectations suite. Nice-to-have; the current checks already demonstrate the concept.
 
 * **Phase 10 — Dashboard polish.** Replace the deprecated `use_container_width` argument with `width='stretch'` throughout `app.py`. Non-breaking, just removes console warnings.
 
-* **Phase 11 — Deployment.** Add Docker Compose for local reproduction, plus a public Streamlit deployment (Community Cloud or Hugging Face Spaces) so the dashboard is clickable from a URL. Strongest remaining differentiator for a portfolio piece.
-
-The ML stack (Phases 6–9), the medallion data pipeline (Phases 1–3), and orchestration (Phase 5) are all production-quality and fully documented.
+* **Optional extensions** — a dbt-based transformation layer, GitHub Actions CI, or a second portfolio project using a real-data source such as Lending Club or Home Credit.
 
 ---
 
@@ -1042,6 +1077,7 @@ The central idea is:
 | Visualization     | Plotly                  |
 | Data Quality      | SQL / Python            |
 | Version Control   | Git / GitHub            |
+| Deployment        | Streamlit Community Cloud + Supabase Postgres |
 
 ---
 
@@ -1081,6 +1117,8 @@ CreditPulse/
 │
 ├── app.py
 ├── requirements.txt
+├── requirements-full.txt
+├── requirements-cloud.txt
 └── README.md
 ```
 
