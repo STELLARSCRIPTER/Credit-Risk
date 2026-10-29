@@ -86,7 +86,7 @@ def get_db_url():
 def load_data():
     db_url = get_db_url()
     try:
-        # Using NullPool is recommended for Supabase Pooler (port 6543)
+        from sqlalchemy.pool import NullPool
         engine = create_engine(db_url, poolclass=NullPool)
         return pd.read_sql("""
             SELECT
@@ -97,7 +97,6 @@ def load_data():
             FROM lead_summary
         """, engine)
     except Exception as e:
-        # This will print the EXACT database error to your screen
         st.error(f"Database Connection Error: {e}")
         st.stop()
 
