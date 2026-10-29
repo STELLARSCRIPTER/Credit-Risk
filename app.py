@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import pandas as pd
 import numpy as np
@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool  # Required for Supabase Transaction Pooler
 
 st.set_page_config(page_title="CreditPulse", page_icon="〽", layout="wide")
 load_dotenv()
@@ -58,7 +59,6 @@ def card(icon, label, value, note):
 def get_db_url():
     """
     Return the Postgres connection string.
-
     Priority:
       1. Streamlit Cloud secrets (st.secrets["DATABASE_URL"])
       2. Local .env file (os.getenv("DATABASE_URL"))
@@ -76,7 +76,7 @@ def get_db_url():
     st.error(
         "Could not find DATABASE_URL. On Streamlit Cloud, set it under "
         "App Settings → Secrets as:\n\n"
-        'DATABASE_URL = "postgresql+psycopg2://..."\n\n'
+        'DATABASE_URL = "postgresql://..."\n\n'
         "Locally, ensure .env contains DATABASE_URL."
     )
     st.stop()
@@ -84,21 +84,28 @@ def get_db_url():
 
 @st.cache_data(ttl=300)
 def load_data():
-    engine = create_engine(get_db_url())
-    return pd.read_sql("""
-        SELECT
-            lead_id, company_name, industry, company_size, job_title, lead_source, country, region,
-            status, created_date, total_activities, received_campaign,
-            campaign_response, treatment_group, opportunity_stage,
-            deal_value, actual_close_date, duration_days
-        FROM lead_summary
-    """, engine)
+    db_url = get_db_url()
+    try:
+        # Using NullPool is recommended for Supabase Pooler (port 6543)
+        engine = create_engine(db_url, poolclass=NullPool)
+        return pd.read_sql("""
+            SELECT
+                lead_id, company_name, industry, company_size, job_title, lead_source, country, region,
+                status, created_date, total_activities, received_campaign,
+                campaign_response, treatment_group, opportunity_stage,
+                deal_value, actual_close_date, duration_days
+            FROM lead_summary
+        """, engine)
+    except Exception as e:
+        # This will print the EXACT database error to your screen
+        st.error(f"Database Connection Error: {e}")
+        st.stop()
 
 
 @st.cache_data(ttl=300)
 def load_country_metrics():
     """Aggregate per-country metrics from lead_summary + ML prediction tables."""
-    engine = create_engine(get_db_url())
+    engine = create_engine(get_db_url(), poolclass=NullPool)
     return pd.read_sql("""
         SELECT
             l.country,
@@ -534,7 +541,7 @@ def load_model_metadata():
 
 @st.cache_data(ttl=300)
 def load_scored_leads():
-    engine = create_engine(get_db_url())
+    engine = create_engine(get_db_url(), poolclass=NullPool)
     try:
         return pd.read_sql("""
             SELECT
@@ -697,7 +704,7 @@ def load_survival_cox():
 
 @st.cache_data(ttl=300)
 def load_survival_predictions():
-    engine = create_engine(get_db_url())
+    engine = create_engine(get_db_url(), poolclass=NullPool)
     try:
         return pd.read_sql("""
             SELECT p.lead_id, p.predicted_median_days,
@@ -884,7 +891,7 @@ def load_clv_summary():
 
 @st.cache_data(ttl=300)
 def load_clv_predictions():
-    engine = create_engine(get_db_url())
+    engine = create_engine(get_db_url(), poolclass=NullPool)
     try:
         return pd.read_sql("""
             SELECT c.lead_id, c.clv_discounted, c.clv_undiscounted, c.clv_tier,
@@ -1067,7 +1074,7 @@ def load_uplift_summary():
 
 @st.cache_data(ttl=300)
 def load_uplift_predictions():
-    engine = create_engine(get_db_url())
+    engine = create_engine(get_db_url(), poolclass=NullPool)
     try:
         return pd.read_sql("""
             SELECT u.lead_id, u.treatment_group, u.event_converted,
@@ -1464,7 +1471,7 @@ def render_map_page():
 
 @st.cache_data(ttl=300)
 def load_etl_metrics():
-    engine = create_engine(get_db_url())
+    engine = create_engine(get_db_url(), poolclass=NullPool)
     row_counts = pd.read_sql("""
         SELECT 'Bronze' AS layer, 'raw_leads' AS table_name, COUNT(*) AS row_count FROM raw_leads
         UNION ALL SELECT 'Bronze', 'raw_opportunities', COUNT(*) FROM raw_opportunities
@@ -1980,5 +1987,3 @@ with insights_col:
     a1.button("Upload Data", use_container_width=True)
     a2.button("View Full Dashboard", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
-
-    

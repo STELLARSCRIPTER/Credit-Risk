@@ -41,12 +41,27 @@ if not REMOTE_URL:
 # Tables the deployed dashboard actually queries.
 # Order matters — smaller tables first so a failure surfaces early.
 TABLES = [
+    # Gold-layer analytics tables (already pushed)
     "lead_summary",
     "ml_lead_scores",
     "ml_survival_predictions",
     "ml_clv_predictions",
     "ml_uplift_predictions",
     "leads_clean",
+    # Bronze-layer raw tables (for ETL page)
+    "raw_leads",
+    "raw_opportunities",
+    "raw_activities",
+    "raw_campaign_touches",
+    # Silver-layer cleaned tables (for ETL page)
+    "opportunities_clean",
+    "activities_clean",
+    "campaign_touches_clean",
+    # Gold-layer star schema (for ETL page)
+    "dim_leads",
+    "fact_opportunities",
+    "fact_activities",
+    "fact_campaign_touches",
 ]
 
 
