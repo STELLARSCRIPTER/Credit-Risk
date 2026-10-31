@@ -1,0 +1,19 @@
+name: Supabase Keep Alive
+
+on:
+  schedule:
+    # Runs every 3 days at midnight UTC (prevents the 7-day pause)
+    - cron: '0 0 */3 * *'
+  workflow_dispatch: # Allows you to run it manually to test
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase Database
+        run: |
+          curl -X GET "https://adeavnhqimfcatqxnvye.supabase.co/rest/v1/lead_summary?select=lead_id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            --fail --silent --show-error
+          echo "✅ Supabase pinged successfully!"
